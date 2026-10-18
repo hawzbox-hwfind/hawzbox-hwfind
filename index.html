@@ -1070,7 +1070,7 @@ async function doActualPost(data){
     closePopup();
   }
 }
-function formatDateTime(ts){try{const d=new Date(ts);return d.toLocaleDateString()+" "+d.toLocaleTimeStamp([],{hour:"2-digit",minute:"2-digit"});}catch(e){return"";}}
+function formatDateTime(ts){try{const d=new Date(ts);return d.toLocaleDateString('en-NG',{day:'2-digit',month:'short',year:'numeric'})+" "+d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}catch(e){return new Date().toLocaleDateString();}}
 function getFiltered(){
   let list=[...posts];
   const q=document.getElementById('searchInput').value.toLowerCase();
