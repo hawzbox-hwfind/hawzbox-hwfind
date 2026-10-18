@@ -1476,12 +1476,12 @@ function renderProfile(){
     <button onclick="toggleSection('help')" class="w-full flex items-center justify-between px-5 py-5"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-[var(--bg)] flex items-center justify-center"><i class="fa-solid fa-headset text-[16px]" style="color:var(--soft)"></i></div><div class="text-left"><span class="font-black text-[16px]" style="color:var(--text)">Help & Support</span><p class="text-[12px] mt-0.5" style="color:var(--soft)">Contact: support@hawzbox.com</p></div></div><i id="icon-help" class="fa-solid fa-chevron-right text-[14px]" style="color:var(--soft)"></i></button>
     <div id="sec-help" class="hidden px-5 pb-6 text-[13px] leading-6 border-t pt-5" style="border-color:var(--border);color:var(--soft)">
       <div class="rounded-[16px] p-4" style="background:var(--bg);border:1px solid var(--border)">
-        <p class="font-black text-[13px]" style="color:var(--text)">Contact</p>
-        <p class="text-[12px] mt-2 leading-6" style="color:var(--text)">Email: support@hawzbox.com<br>Phone: +234(0)9129122950<br>WhatsApp: +234(0)9129122950</p>
+        <p class="font-black text-[13px]" style="color:var(--text)">Contact Us:</p>
+        <p class="text-[12px] mt-2 leading-6" style="color:var(--text)">Email: support@hawzbox.com<br>WhatsApp: +234(0)9129122950</p>
       </div>
-      <div class="mt-5"><p class="font-black text-[13px]" style="color:var(--text)">How to Post - Complete Guide:</p><p class="text-[12px] leading-7 mt-2" style="color:var(--text)">Tap POST button > Select State and Area > Enter full house address with landmark > Select House Type and Price > Enter Listing Title > Upload clear photos and optional video > Add amenities > Enter Landlord Details > Post.</p></div>
-      <div class="mt-5"><p class="font-black text-[13px]" style="color:var(--text)">Safety - Read Carefully:</p><p class="text-[12px] leading-7 mt-2" style="color:var(--text)">HawzBox is a listing platform only. Always inspect house physically before making any payment. Meet landlord at the property and collect key directly.</p></div>
-      <div class="mt-5"><p class="font-black text-[13px]" style="color:var(--text)">Report Fake - We Act Fast:</p><p class="text-[12px] leading-7 mt-2" style="color:var(--text)">Tap report icon on any suspicious post. Help us keep HawzBox clean - Real houses only, direct to owner.</p></div>
+      <div class="mt-5"><p class="font-black text-[13px]" style="color:var(--text)">How to Post:</p><p class="text-[12px] leading-7 mt-2" style="color:var(--text)">Tap POST button > Select State and Area > Enter full house address with landmark > Select House Type and Price > Enter Listing Title > Upload clear photos (up to 15) and a video (100MB maximum)> Add amenities > Enter Landlord Details > And POST.</p></div>
+      <div class="mt-5"><p class="font-black text-[13px]" style="color:var(--text)">Safety:</p><p class="text-[12px] leading-7 mt-2" style="color:var(--text)">Always inspect house physically before making any payment. HawzBox is only a listing platform and does not collect payment for house.</p></div>
+      <div class="mt-5"><p class="font-black text-[13px]" style="color:var(--text)">Report Fake Post:</p><p class="text-[12px] leading-7 mt-2" style="color:var(--text)">Tap report icon on any suspicious post. Help us keep HawzBox clean and secure - Real houses only, direct to owner.</p></div>
     </div>
 
     <button onclick="toggleSection('settings')" class="w-full flex items-center justify-between px-5 py-5 border-t" style="border-color:var(--border)"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-[var(--bg)] flex items-center justify-center"><i class="fa-solid fa-gear text-[16px]" style="color:var(--soft)"></i></div><span class="font-black text-[16px]" style="color:var(--text)">Settings</span></div><i id="icon-settings" class="fa-solid fa-chevron-right text-[14px]" style="color:var(--soft)"></i></button>
@@ -1489,31 +1489,28 @@ function renderProfile(){
       <div class="space-y-5">
         <div class="flex justify-between items-center p-4 rounded-[16px]" style="background:var(--bg);border:1px solid var(--border)"><div><p class="font-bold text-[13px]" style="color:var(--text)">Dark Mode</p><p class="text-[11px]" style="color:var(--soft)">Switch light / dark</p></div><div class="flex items-center gap-2"><span id="darkModeStatusText" class="text-[11px] font-bold" style="color:var(--soft)">${theme==='dark'?'ON':'OFF'}</span><div class="toggle-switch ${theme==='dark'?'active':''}" onclick="toggleDarkModeInline(this)"></div></div></div>
         <div class="flex justify-between items-center p-4 rounded-[16px]" style="background:var(--bg);border:1px solid var(--border)"><div><p class="font-bold text-[13px]" style="color:var(--text)">Area Notifications</p><p class="text-[11px]" style="color:var(--soft)">Get alert when on</p></div><div class="flex items-center gap-2"><span id="areaNotifStatusText" class="text-[11px] font-black" style="color:${areaNotifEnabled?'#22c55e':'#ef4444'}">${areaNotifEnabled?'ON':'OFF'}</span><div class="toggle-switch ${areaNotifEnabled?'active':''}" onclick="toggleAreaNotifInline(this)"></div></div></div>
-        <div class="flex justify-between items-center p-4 rounded-[16px]" style="background:var(--bg);border:1px solid var(--border)"><div><p class="font-bold text-[13px]" style="color:var(--text)">Version</p><p class="text-[11px]" style="color:var(--soft)">HawzBox</p></div><span class="text-[12px] font-black px-4 py-1.5 rounded-full bg-[#22c55e] text-black">v2.0</span></div>
+        <div class="flex justify-between items-center p-4 rounded-[16px]" style="background:var(--bg);border:1px solid var(--border)"><div><p class="font-bold text-[13px]" style="color:var(--text)">Version</p><p class="text-[11px]" style="color:var(--soft)">HawzBox</p></div><span class="text-[12px] font-black px-4 py-1.5 rounded-full bg-[#22c55e] text-black">v1.0</span></div>
         <button onclick="clearAllData()" class="w-full mt-2 rounded-full py-3.5 font-bold text-[13px] border" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Clear All Data</button>
       </div>
     </div>
 
     <button onclick="toggleSection('privacy')" class="w-full flex items-center justify-between px-5 py-5 border-t" style="border-color:var(--border)"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-[var(--bg)] flex items-center justify-center"><i class="fa-solid fa-shield-halved text-[16px]" style="color:var(--soft)"></i></div><span class="font-black text-[16px]" style="color:var(--text)">Privacy Policy</span></div><i id="icon-privacy" class="fa-solid fa-chevron-right text-[14px]" style="color:var(--soft)"></i></button>
     <div id="sec-privacy" class="hidden px-5 pb-6 text-[12px] leading-7 border-t pt-5" style="border-color:var(--border);color:var(--soft)">
-      <p class="font-black text-[15px] mb-3" style="color:var(--text)">Privacy Policy for HawzBox</p>
+      <p class="font-black text-[15px] mb-3" style="color:var(--text)">Privacy Policy</p>
       <div class="space-y-4 text-[13px] leading-7">
         <p>HawzBox respects your privacy. Your personal information is secure and encrypted.</p>
         <p>We do not sell your data to third parties.</p>
-        <p>House listings are visible to all users to help you find a house quickly.</p>
         <p>You can delete your data anytime in Settings > Clear All Data.</p>
-        <p>Always inspect a house physically before making payment.</p>
-        <p class="mt-3 font-bold text-[13px]" style="color:var(--text)">Contact: support@hawzbox.com | +234(0)9129122950</p>
       </div>
     </div>
 
     <button onclick="toggleSection('about')" class="w-full flex items-center justify-between px-5 py-5 border-t" style="border-color:var(--border)"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-[var(--bg)] flex items-center justify-center"><i class="fa-solid fa-circle-info text-[16px]" style="color:var(--soft)"></i></div><span class="font-black text-[16px]" style="color:var(--text)">ABOUT HAWZBOX</span></div><i id="icon-about" class="fa-solid fa-chevron-right text-[14px]" style="color:var(--soft)"></i></button>
     <div id="sec-about" class="hidden px-5 pb-6 text-[13px] leading-7 border-t pt-5" style="border-color:var(--border);color:var(--soft)">
-      <p class="text-[11px] font-bold tracking-widest" style="color:var(--soft)">ABOUT HAWZBOX - COMPLETE</p>
+      <p class="text-[11px] font-bold tracking-widest" style="color:var(--soft)">About Hawzbox</p>
       <p class="font-black text-[16px] mt-4" style="color:var(--text)">ABOUT US</p>
-      <p class="mt-3 text-[13px] leading-7" style="color:#b0b0b0">HawzBox is a direct housing platform that connects tenants with landlords and property owners across Nigeria. We help you find verified lodges and apartments without agent fees.</p>
+      <p class="mt-3 text-[13px] leading-7" style="color:#b0b0b0">HawzBox is addressing the inefficiencies in Nigeria's rental market by providing a technology-driven platform that facilitates direct transactions between tenants and property owners. Our model eliminates agent dependency, reduces transaction costs, and increases market transparency. With a focus on verified listings and user trust. HawzBox is positioned for scalable growth across Nigeria's high-demand urband rental sector.</p>
       <p class="font-black text-[16px] mt-6" style="color:var(--text)">OUR MISSION</p>
-      <p class="mt-3 text-[13px] leading-7" style="color:#b0b0b0">To make house hunting in Nigeria simple, transparent and affordable. We prioritize direct connection and trust between tenants and property owners.</p>
+      <p class="mt-3 text-[13px] leading-7" style="color:#b0b0b0">Our mission is to transform how Nigerians find homes. We recognized the challenges of excessive agent fees and unreliable listings, and built a solution that prioritizes directness and trust. HawzBox empowers tenants to connect seamlessly with landlords and property owners, ensuring access to verified lodges and apartments across Nigeria. We are committed to making house hunting simpler, more transparent, and affordable for everyone.</p>
       <p class="font-black text-[16px] mt-6" style="color:var(--text)">OUR VISION</p>
       <p class="mt-3 text-[13px] leading-7" style="color:#b0b0b0">To become Nigeria's most trusted direct housing marketplace where every Nigerian can find a verified house easily.</p>
       <p class="font-black text-[16px] mt-6" style="color:var(--text)">WHY CHOOSE HAWZBOX</p>
@@ -1525,7 +1522,7 @@ function renderProfile(){
         <p>• 100% Trusted Platform</p>
       </div>
       <div class="mt-6 rounded-[20px] p-5" style="background:var(--bg);border:1px solid rgba(34,197,94,0.2)">
-        <p class="font-bold text-[13px] mb-2" style="color:#22c55e">100% Trusted - Direct to Owner - No Agent Fee</p>
+        <p class="font-bold text-[13px] mb-2" style="color:#22c55e">Trusted Platform - Direct to Owner</p>
         <p class="text-[12px] leading-5" style="color:#888">HawzBox - Easy find lodge & apartment.<br>Inspect house physically before payment.<br>support@hawzbox.com | +234(0)9129122950</p>
       </div>
     </div>
@@ -1548,7 +1545,7 @@ function renderProfile(){
   </div>
 
   <button onclick="logoutUser()" class="w-full mt-6 rounded-full py-4 font-black text-[14px] border" style="background:var(--bg);border:1px solid #ef4444;color:#ef4444">LOGOUT</button>
-  <div class="trust-footer mt-4 text-center text-[11px] pb-10" style="color:var(--soft)">100% Trusted Platform - Direct to Owner - No Agent Fee - Inspect Before Payment</div>`;
+  <div class="trust-footer mt-4 text-center text-[11px] pb-10" style="color:var(--soft)">100% Trusted Platform - Direct to Owner - Always Inspect Before Payment</div>`;
 }
 
 let selectedMood='';
@@ -1623,7 +1620,7 @@ function showOuterVerificationGate(onVerified){
   box.innerHTML=`<div class="w-full max-w-[400px] rounded-[28px] p-6 max-h-[92vh] overflow-auto no-scrollbar" style="background:var(--card);border:2px solid #22c55e">
     <div class="flex justify-center"><div class="w-[60px] h-[60px] bg-[#22c55e]/20 rounded-full flex items-center justify-center" style="border:2px solid #22c55e"><span style="font-size:28px">🛡️</span></div></div>
     <h2 class="font-black text-[18px] mt-4 text-center" style="color:#22c55e">OWNER VERIFICATION</h2>
-    <p class="text-[12px] mt-2 text-center leading-5" style="color:var(--soft)">You are about to post a house. Confirm checks</p>
+    <p class="text-[12px] mt-2 text-center leading-5" style="color:var(--soft)">You are about to post a house. Please confirm checks</p>
     <div class="mt-5 space-y-3">
       <label class="flex gap-3 rounded-[12px] p-3 cursor-pointer" style="background:var(--bg);border:1px solid var(--border)"><input type="checkbox" class="verifyCheckOuter w-5 h-5 accent-[#22c55e] mt-0.5"><span class="text-[13px] leading-5" style="color:var(--text)">This house is real & I have access - direct owner / caretaker</span></label>
       <label class="flex gap-3 rounded-[12px] p-3 cursor-pointer" style="background:var(--bg);border:1px solid var(--border)"><input type="checkbox" class="verifyCheckOuter w-5 h-5 accent-[#22c55e] mt-0.5"><span class="text-[13px] leading-5" style="color:var(--text)">Photos & video are real photos of this exact house</span></label>
