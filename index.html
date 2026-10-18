@@ -361,7 +361,7 @@ window.confirmClearAllData = function(){
 }
 </script>
 <meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-<title>HawzBox - DUAL PAYSTACK + AI - ADMIN ONLY</title>
+<title>HawzBox</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#080808">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -474,7 +474,7 @@ html, body{background:var(--bg)!important;color:var(--text);font-family:Inter,sy
   <div class="w-full max-w-[340px] rounded-[24px] p-6 border-2 text-center" style="background:#1a1a1a; border-color:#ff4444; box-shadow:0 20px 60px rgba(0,0,0,0.8)">
     <div class="w-[56px] h-[56px] rounded-full mx-auto flex items-center justify-center mb-4" style="background:rgba(255,68,68,0.15); border:1px solid rgba(255,68,68,0.3)"><span style="font-size:28px">⚠️</span></div>
     <h3 class="font-black text-[18px] mb-2" style="color:#ffffff">Clear All Data?</h3>
-    <p class="text-[13px] leading-5 mb-6" style="color:#a0a0a0">Are you sure you want to clear data? This action cannot be undone and all your saved data will be deleted.</p>
+    <p class="text-[13px] leading-5 mb-6" style="color:#a0a0a0">Are you sure you want to clear all data? This action cannot be undone and all your saved data will be deleted.</p>
     <div class="flex gap-3">
       <button onclick="closeClearDataWarning()" class="flex-1 h-[48px] rounded-full font-bold text-[14px] border" style="background:#242424; color:#ffffff; border-color:#2e2e2e">Cancel</button>
       <button onclick="confirmClearAllData()" class="flex-1 h-[48px] rounded-full font-bold text-[14px]" style="background:#ff4444; color:#ffffff">Yes, Clear</button>
@@ -836,7 +836,7 @@ function startVoice(){
       vs.innerHTML='<span class="dot-blink">🎤</span> Listening... speak now - tap mic to cancel';
       vs.style.color='#22c55e';
     }
-    if(inp){ inp.placeholder='🎤 Listening...'; inp.style.borderColor='#22c55e'; }
+    if(inp){ inp.placeholder='Listening...'; inp.style.borderColor='#22c55e'; }
     if(micBtn){
       micBtn.style.background='#ef4444';
       micBtn.style.animation='blinkDot 0.8s infinite';
@@ -1098,7 +1098,7 @@ function getFiltered(){
 function slideImage(e,postId,dir,total){try{if(e){e.preventDefault();e.stopPropagation();}const pid=String(postId);let cur=parseInt(currentSlide[pid]||0);cur+=dir;if(cur<0)cur=total-1;if(cur>=total)cur=0;currentSlide[pid]=cur;const img=document.getElementById('feed-img-'+pid);const count=document.getElementById('feed-count-'+pid);const post=posts.find(p=>String(p.fid||p.id)===pid);if(!img||!post)return;const imgs=(post.images&&post.images.length?post.images:(post.image?[post.image]:[]));if(!imgs.length)return;const nextSrc=imgs[cur%imgs.length];if(nextSrc){img.src=nextSrc;}if(count)count.innerText=(cur+1)+'/'+total;}catch(err){}}
 async function toggleTaken(id){const p=posts.find(x=>String(x.id)===String(id)||String(x.fid)===String(id));if(!p)return;const uid=localStorage.getItem('hawz_user_id');if(String(p.ownerId)!==String(uid)){showToast('Only owner can mark');return;}p.taken=!p.taken;saveAll();saveToBig();try{if(p.fid&&window.fbUpdatePost){await window.fbUpdatePost(p.fid,{taken:p.taken});}else if(p.id&&window.fbUpdatePost){await window.fbUpdatePost(p.id,{taken:p.taken});}}catch(e){}renderFeed();renderMyPosts();showToast(p.taken?'Marked as Taken ✓ - All users will see blur':'Available ✓ - All users will see');}
 async function deleteMyPost(id){
-  if(!confirm('Delete this post permanently? It will never return on any phone.'))return;
+  if(!confirm('Delete this post permanently?'))return;
   const fidStr=String(id);
   const target=posts.find(x=>String(x.id)===String(id)||String(x.fid)===String(id));
   posts=posts.filter(x=>String(x.id)!==String(id)&&String(x.fid)!==String(id));
@@ -1113,7 +1113,7 @@ async function deleteMyPost(id){
     if(target&&target.fid&&window.fbDeletePost){await window.fbDeletePost(target.fid);}
     else if(window.fbDeletePost){await window.fbDeletePost(id);}
   }catch(e){}
-  renderFeed();updateMyPostsBadge();renderMyPosts();showToast('Post deleted permanently ✓ - Never returns');
+  renderFeed();updateMyPostsBadge();renderMyPosts();showToast('Post deleted permanently ✓');
 }
 function deletePhotoFromPost(postId,photoIdx){const p=posts.find(x=>String(x.id)===String(postId)||String(x.fid)===String(postId));if(!p||!p.images)return;if(p.images.length<=1){showToast('At least 1 photo required');return;}p.images.splice(photoIdx,1);p.image=p.images[0];p.imageHashes=p.images.map(getImageHash);p.imagesCount=p.images.length;saveAll();saveToBig();renderMyPosts();showToast('Photo deleted ✓');}
 function updateMyPostsBadge(){const uid=localStorage.getItem('hawz_user_id');const myList=posts.filter(p=>String(p.ownerId)===String(uid));const btn=document.getElementById('myPostsBtn');if(btn){if(myList.length>0){btn.style.background='#22c55e';btn.style.border='1px solid #22c55e';btn.innerHTML='<i class="fa-solid fa-bookmark text-black"></i>';}else{btn.style.background='var(--card)';btn.style.border='1px solid var(--border)';btn.innerHTML='<i class="fa-solid fa-bookmark" style="color:var(--text)"></i>';}}}
@@ -1519,33 +1519,27 @@ function renderProfile(){
         <p>• Real Photos & Verified Listings</p>
         <p>• Chat & Call Landlord Directly</p>
         <p>• All States & Areas Covered</p>
-        <p>• 100% Trusted Platform</p>
       </div>
-      <div class="mt-6 rounded-[20px] p-5" style="background:var(--bg);border:1px solid rgba(34,197,94,0.2)">
-        <p class="font-bold text-[13px] mb-2" style="color:#22c55e">Trusted Platform - Direct to Owner</p>
-        <p class="text-[12px] leading-5" style="color:#888">HawzBox - Easy find lodge & apartment.<br>Inspect house physically before payment.<br>support@hawzbox.com | +234(0)9129122950</p>
-      </div>
-    </div>
 
     <button onclick="toggleSection('feedback')" class="w-full flex items-center justify-between px-5 py-5 border-t" style="border-color:var(--border)"><div class="flex items-center gap-3"><div class="w-10 h-10 rounded-full bg-[var(--bg)] flex items-center justify-center"><i class="fa-regular fa-message text-[16px]" style="color:var(--soft)"></i></div><div class="text-left"><span class="font-black text-[16px]" style="color:var(--text)">Feedback</span><p class="text-[12px] mt-0.5" style="color:var(--soft)">We value your feedback!</p></div></div><i id="icon-feedback" class="fa-solid fa-chevron-right text-[14px]" style="color:var(--soft)"></i></button>
     <div id="sec-feedback" class="hidden px-5 pb-6 border-t pt-5" style="border-color:var(--border)">
       <p class="font-black text-[15px]" style="color:var(--text)">SEND FEEDBACK</p>
       <p class="text-[12px] mt-2 leading-6" style="color:var(--soft)">We value your feedback! Share your thoughts, suggestions, or report an issue...</p>
       <div class="flex gap-2 mt-4 flex-wrap">
-        <button onclick="setFeedbackMood(this,'Bad')" class="feedback-mood px-5 py-2.5 rounded-full font-bold text-[13px]" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Bad</button>
-        <button onclick="setFeedbackMood(this,'Okay')" class="feedback-mood px-5 py-2.5 rounded-full font-bold text-[13px]" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Okay</button>
-        <button onclick="setFeedbackMood(this,'Good')" class="feedback-mood px-5 py-2.5 rounded-full font-bold text-[13px]" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Good</button>
-        <button onclick="setFeedbackMood(this,'Love')" class="feedback-mood px-5 py-2.5 rounded-full font-bold text-[13px]" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Love</button>
+        <button onclick="setFeedbackMood(this,'Bad')" class="feedback-mood px-3 py-1.5 rounded-full font-bold text-[10px]" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Bad</button>
+        <button onclick="setFeedbackMood(this,'Okay')" class="feedback-mood px-3 py-1.5 rounded-full font-bold text-[10px]" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Okay</button>
+        <button onclick="setFeedbackMood(this,'Good')" class="feedback-mood px-3 py-1.5 rounded-full font-bold text-[10px]" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Good</button>
+        <button onclick="setFeedbackMood(this,'Love')" class="feedback-mood px-3 py-1.5 rounded-full font-bold text-[10px]" style="background:var(--bg);border:1px solid var(--border);color:var(--soft)">Love</button>
       </div>
-      <textarea id="feedbackText" placeholder="Write your feedback here..." class="w-full mt-4 rounded-[16px] px-4 py-4 text-[13px] min-h-[130px] outline-none" style="background:var(--bg);border:1px solid var(--border);color:var(--text)"></textarea>
-      <input id="feedbackContact" placeholder="Your phone or email (optional)" class="w-full mt-3 rounded-[14px] px-4 py-3.5 text-[13px] outline-none" style="background:var(--bg);border:1px solid var(--border);color:var(--text)">
+      <textarea id="feedbackText" placeholder="Write your feedback here..." class="w-full mt-4 rounded-[16px] px-4 py-4 text-[12px] min-h-[130px] outline-none" style="background:var(--bg);border:1px solid var(--border);color:var(--text)"></textarea>
+      <input id="feedbackContact" placeholder="Your WhatsApp number/email (optional)" class="w-full mt-3 rounded-[14px] px-4 py-3.5 text-[10px] outline-none" style="background:var(--bg);border:1px solid var(--border);color:var(--text)">
       <button onclick="sendFeedback()" class="w-full mt-4 bg-[#22c55e] text-black font-black py-4 rounded-full text-[15px]">Send Feedback ✓</button>
       <p class="text-[11px] mt-3 text-center" style="color:var(--soft)">Thank you for helping us improve</p>
     </div>
   </div>
 
   <button onclick="logoutUser()" class="w-full mt-6 rounded-full py-4 font-black text-[14px] border" style="background:var(--bg);border:1px solid #ef4444;color:#ef4444">LOGOUT</button>
-  <div class="trust-footer mt-4 text-center text-[11px] pb-10" style="color:var(--soft)">100% Trusted Platform - Direct to Owner - Always Inspect Before Payment</div>`;
+  <div class="trust-footer mt-4 text-center text-[11px] pb-10" style="color:var(--soft)">Trusted Platform - Direct to Owner</div>`;
 }
 
 let selectedMood='';
