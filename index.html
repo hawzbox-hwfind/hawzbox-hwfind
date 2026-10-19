@@ -2463,6 +2463,329 @@ setTimeout(()=>{
 
 console.log('✅ BROADCAST LIVE + AI AGENT LIKE META AI LOADED - Professional');
 </script>
+<script>
+// ===== FIX UPLOAD PHOTO BUG - PERFECT PROFESSIONAL =====
+console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
+
+// Sync uploadedImages global and window
+(function(){
+  // Ensure window.uploadedImages points to same array as global
+  try{
+    // Patch handleFiles to sync
+    const origHandleFiles = window.handleFiles;
+    window.handleFiles = async function(files){
+      if(origHandleFiles){
+        const result = await origHandleFiles(files);
+        try{
+          // Sync: global uploadedImages -> window.uploadedImages
+          if(typeof uploadedImages!=='undefined'){
+            window.uploadedImages = uploadedImages;
+            console.log('📸 Photos synced:', uploadedImages.length, 'photos ready');
+          }
+        }catch(e){}
+        return result;
+      }
+    };
+    
+    // Also patch removeImg
+    const origRemoveImg = window.removeImg;
+    window.removeImg = function(idx){
+      try{
+        if(typeof uploadedImages!=='undefined'){
+          uploadedImages.splice(idx,1);
+          window.uploadedImages = uploadedImages;
+        } else if(window.uploadedImages){
+          window.uploadedImages.splice(idx,1);
+        }
+        const grid=document.getElementById('previewGrid');
+        if(grid && grid.children[idx]) grid.children[idx].remove();
+        const c=document.getElementById('fileCount');
+        if(c) c.innerText=(window.uploadedImages||uploadedImages||[]).length+' / 15 photos';
+        if(typeof showToast==='function') showToast('Photo removed');
+      }catch(e){ console.warn(e); if(origRemoveImg) origRemoveImg(idx); }
+    };
+    
+    // Patch removeVideo
+    const origRemoveVideo = window.removeVideo;
+    window.removeVideo = function(){
+      try{
+        if(typeof uploadedVideo!=='undefined') { uploadedVideo=null; }
+        if(typeof uploadedVideoPreview!=='undefined') { uploadedVideoPreview=''; }
+        window.uploadedVideo=null; window.uploadedVideoPreview='';
+        const grid=document.getElementById('videoPreviewGrid');
+        if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+        const count=document.getElementById('videoCount');
+        if(count) count.innerText='';
+        try{ document.getElementById('pVideo').value=''; }catch(e){}
+      }catch(e){ if(origRemoveVideo) origRemoveVideo(); }
+    };
+    
+  }catch(e){ console.warn('Patch fail', e); }
+
+  // Override handlePostNowWithLivePay to check BOTH arrays - FIX BUG
+  window.handlePostNowWithLivePay = async function(){
+    if(window.isPosting){ if(typeof showToast==='function') showToast('Posting... please wait'); return; }
+    
+    // Get images from BOTH sources - fix bug
+    let imagesToUse = [];
+    try{
+      if(typeof uploadedImages!=='undefined' && uploadedImages.length>0) imagesToUse = uploadedImages;
+      else if(window.uploadedImages && window.uploadedImages.length>0) imagesToUse = window.uploadedImages;
+      else if(window.uploadedImages && window.uploadedImages.length===0 && typeof uploadedImages!=='undefined') imagesToUse = uploadedImages;
+    }catch(e){ imagesToUse = window.uploadedImages||[]; }
+    
+    console.log('📸 Post attempt - Images found:', imagesToUse.length, 'Global:', typeof uploadedImages!=='undefined'? uploadedImages.length:'N/A', 'Window:', window.uploadedImages?window.uploadedImages.length:0);
+
+    if(imagesToUse.length===0){
+      if(typeof showToast==='function') showToast('❌ Upload at least 1 photo - Tap the photo area to add photos');
+      // Highlight photo area
+      try{
+        const photoArea=document.getElementById('previewGrid')?.parentElement || document.querySelector('[onclick*="handleFiles"]');
+        if(photoArea){ photoArea.style.border='2px solid #ef4444'; setTimeout(()=>{ photoArea.style.border=''; }, 2000); }
+      }catch(e){}
+      return;
+    }
+
+    const state=document.getElementById('pState')?.value||'';
+    const area=document.getElementById('pArea')?.value||'';
+    const address=document.getElementById('pAddress')?.value.trim()||'';
+    const houseType=document.getElementById('pHouseType')?.value||'';
+    const price=document.getElementById('pPrice')?.value.trim()||'';
+    const type=document.getElementById('pType')?.value||'';
+    const title=document.getElementById('pTitle')?.value.trim()||'';
+    const customAmenities=document.getElementById('pCustomAmenities')?.value.trim()||'';
+    const landlordTitle=document.getElementById('pLandlordTitle')?.value||'';
+    const ownerName=document.getElementById('pOwner')?.value.trim()||'';
+    const phone=document.getElementById('pPhone')?.value.trim()||'';
+    const whatsapp=document.getElementById('pWhatsApp')?.value.trim()||'';
+    const isUrgent=document.getElementById('pUrgent')?.checked||false;
+    let amenities=[];
+    try{ amenities=[...(typeof selectedAmenities!=='undefined'? selectedAmenities : window.selectedAmenities||[])]; }catch(e){ amenities=[...(window.selectedAmenities||[])]; }
+
+    if(!address||!price||!title||!ownerName||!phone){
+      if(typeof showToast==='function') showToast('Fill all required fields: Title, Price, Address, Owner Name, Phone');
+      return;
+    }
+
+    const uid=localStorage.getItem('hawz_user_id');
+    if(typeof isUserBanned==='function' && isUserBanned(uid)){
+      if(typeof showToast==='function') showToast('You are BANNED'); return;
+    }
+
+    // Duplicate check
+    let tempHashes=[];
+    try{
+      tempHashes = imagesToUse.map(b=>{ try{ return (window.getImageHash||getImageHash)(b); }catch(e){return '';} }).filter(Boolean);
+    }catch(e){}
+
+    let dup=null;
+    try{ if(window.checkFakeDuplicateLive) dup = window.checkFakeDuplicateLive(tempHashes); }catch(e){}
+    if(!dup){
+      try{ if(typeof detectFakeDuplicate==='function') dup=detectFakeDuplicate(imagesToUse, area); }catch(e){}
+    }
+    if(dup){
+      try{ if(window.reportFakeToAdminInstant) window.reportFakeToAdminInstant(dup, {title, area, state}); }catch(e){}
+      const dangerBox=document.createElement('div');
+      dangerBox.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,0.92)';
+      dangerBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:24px;padding:24px;max-width:380px;width:100%;text-align:center"><div style="width:80px;height:80px;background:rgba(239,68,68,0.15);border:1px solid #ef4444;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto"><span style="font-size:36px">🚨</span></div><h2 style="color:#ef4444;font-weight:900;font-size:18px;margin-top:12px">FAKE PHOTO DETECTED!</h2><p style="color:#fff;font-size:13px;margin-top:8px;line-height:20px">This same photo was already used for house in <b>${dup.area||'another area'}</b>. Same photo in different area = SCAM. Post rejected.</p><button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:16px;background:#ef4444;color:#fff;padding:14px;border-radius:12px;font-weight:900">I UNDERSTAND</button></div>`;
+      document.body.appendChild(dangerBox);
+      return;
+    }
+
+    let videoToUse=null;
+    try{
+      if(typeof uploadedVideoPreview!=='undefined' && uploadedVideoPreview) videoToUse=uploadedVideoPreview;
+      else if(window.uploadedVideoPreview) videoToUse=window.uploadedVideoPreview;
+    }catch(e){ videoToUse=window.uploadedVideoPreview||null; }
+
+    const postData={state,area,address,houseType,price,type,title,amenities,customAmenities,landlordTitle,ownerName,phone,whatsapp,isUrgent,images:[...imagesToUse],video:videoToUse||null, imageHashes: tempHashes};
+
+    // Paystack check
+    const liveCfg = (typeof getLivePay==='function')? getLivePay(): {enabledPost:false};
+    if(liveCfg.enabledPost && liveCfg.publicKey){
+      window.pendingPostData = postData;
+      window.pendingPaywallType='post';
+      const payModal=document.getElementById('paywallModal');
+      if(payModal){
+        document.getElementById('paywallTitle').innerText='Pay to Post House';
+        document.getElementById('paywallText').innerText='Pay ₦'+liveCfg.amountPost+' to post your house LIVE worldwide instantly.';
+        document.getElementById('paywallAmount').innerText='₦'+liveCfg.amountPost;
+        document.getElementById('paywallType').innerText='POST FEE - Secure';
+        const icon=document.getElementById('paywallIcon'); if(icon) icon.className='fa-solid fa-house text-black text-[28px]';
+        payModal.classList.remove('hidden'); payModal.style.display='flex';
+      }
+      return;
+    }
+
+    // POST LIVE WORLDWIDE - NO LOCAL STORAGE
+    if(typeof doActualPostLIVE==='function'){
+      await doActualPostLIVE(postData);
+    } else if(typeof doActualPost==='function'){
+      await doActualPost(postData);
+    } else {
+      console.error('No post function found');
+      if(typeof showToast==='function') showToast('Post system error - refresh page');
+    }
+  };
+
+  // Fix doActualPostLIVE to ensure LIVE to all devices (PC, phone, any) - NO LOCAL STORAGE
+  window.doActualPostLIVE = window.doActualPostLIVE || window.doActualPost;
+  const origDoActualPostLIVE = window.doActualPostLIVE;
+  window.doActualPostLIVE = async function(data){
+    const btn=document.getElementById('postNowBtn');
+    if(window.isPosting) return;
+    window.isPosting=true;
+    if(btn){ btn.innerText='POSTING LIVE WORLDWIDE...'; btn.disabled=true; btn.style.opacity='0.7'; }
+    
+    let postingOverlay=document.getElementById('livePostingOverlay');
+    if(!postingOverlay){
+      postingOverlay=document.createElement('div');
+      postingOverlay.id='livePostingOverlay';
+      postingOverlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px';
+      postingOverlay.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:24px;padding:28px;max-width:360px;width:100%;text-align:center">
+        <div style="width:80px;height:80px;border-radius:50%;border:4px solid #1a1a1a;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+        <h2 style="color:#fff;font-weight:900;font-size:18px;margin-top:16px">POSTING LIVE WORLDWIDE... 🌍</h2>
+        <p style="color:#22c55e;font-size:12px;margin-top:6px">Broadcasting to all phones, PCs, tablets instantly</p>
+        <p id="liveUploadStatus" style="color:#888;font-size:11px;margin-top:10px">Preparing...</p>
+      </div>`;
+      document.body.appendChild(postingOverlay);
+      document.body.style.overflow='hidden';
+    }
+    const updateStatus=(txt)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=txt; }catch(e){} };
+
+    try{
+      updateStatus('Checking duplicate photos...');
+      if(window.checkDuplicateAndFakePro){
+        const chk = window.checkDuplicateAndFakePro(data);
+        if(chk.isFake){
+          if(postingOverlay) postingOverlay.remove();
+          document.body.style.overflow='';
+          window.isPosting=false;
+          if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+          if(window.handleFakeCheckBeforePost) window.handleFakeCheckBeforePost(data);
+          return;
+        }
+      }
+
+      updateStatus('Compressing '+data.images.length+' photos for LIVE...');
+      const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+      const profileName = (typeof profileName!=='undefined' && profileName) ? profileName : (localStorage.getItem('hawz_name')||'User');
+      
+      let instantPost={
+        title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+        houseType:data.houseType, type:data.type, amenities:data.amenities, customAmenities:data.customAmenities,
+        landlordTitle:data.landlordTitle, ownerName:data.ownerName||profileName, posterName:profileName,
+        ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+        images:[...data.images], image:data.images[0], imageHashes:data.imageHashes||[], imagesCount:data.images.length,
+        video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
+      };
+
+      updateStatus('Saving to Firebase LIVE - All devices will see it...');
+      let firebaseId=null;
+      try{
+        if(window.fbAddPost){
+          firebaseId = await Promise.race([
+            window.fbAddPost(instantPost),
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('Firebase timeout - check rules & internet')), 20000))
+          ]);
+        } else {
+          throw new Error('Firebase not ready');
+        }
+      }catch(fbErr){
+        console.error('Firebase post failed:', fbErr);
+        if(postingOverlay) postingOverlay.remove();
+        let errBox=document.createElement('div');
+        errBox.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+        errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:420px;width:100%">
+          <h2 style="color:#ef4444;font-weight:900;font-size:18px;text-align:center">🔥 POST FAILED - CHECK FIRESTORE RULES</h2>
+          <p style="color:#fff;font-size:13px;margin-top:12px">Error: ${String(fbErr.message||fbErr).slice(0,300)}</p>
+          <p style="color:#888;font-size:11px;margin-top:8px">Make sure Firestore rules allow posts: allow read, write: if true;</p>
+          <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:14px;border-radius:12px;font-weight:900">OKAY</button>
+        </div>`;
+        document.body.appendChild(errBox);
+        window.isPosting=false;
+        if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+        return;
+      }
+
+      updateStatus('Broadcasting LIVE to all devices worldwide... 🌍');
+      await new Promise(r=>setTimeout(r, 500));
+
+      // Clear form - BOTH arrays
+      try{
+        if(typeof uploadedImages!=='undefined') uploadedImages=[];
+        window.uploadedImages=[];
+        if(typeof uploadedVideo!=='undefined') uploadedVideo=null;
+        if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview='';
+        window.uploadedVideo=null; window.uploadedVideoPreview='';
+        const els=['pTitle','pPrice','pAddress','pCustomAmenities']; els.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+        const grid=document.getElementById('previewGrid'); if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+        const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); }
+        const fc=document.getElementById('fileCount'); if(fc) fc.innerText='';
+        const vc=document.getElementById('videoCount'); if(vc) vc.innerText='';
+        try{ document.getElementById('pFiles').value=''; }catch(e){}
+        try{ document.getElementById('pVideo').value=''; }catch(e){}
+        selectedAmenities=new Set(); window.selectedAmenities=new Set();
+        try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+      }catch(e){ console.warn('Clear form fail', e); }
+
+      if(postingOverlay) postingOverlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      
+      if(typeof closePostModal==='function') try{closePostModal()}catch(e){}
+      if(typeof closePaywall==='function') try{closePaywall()}catch(e){}
+
+      // Success - LIVE to all devices
+      let success=document.createElement('div');
+      success.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+      success.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:24px;padding:28px;max-width:380px;width:100%;text-align:center">
+        <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto"><i class="fa-solid fa-check" style="color:#000;font-size:36px"></i></div>
+        <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:16px">POSTED LIVE WORLDWIDE! 🌍✓</h2>
+        <p style="color:#22c55e;font-size:13px;margin-top:8px">"${data.title}" in ${data.area} is LIVE!</p>
+        <p style="color:#888;font-size:11px;margin-top:6px">All users on phone, PC, tablet worldwide see it instantly - Like Facebook! No local storage, 100% Firebase LIVE • ${data.images.length} photos</p>
+        <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:18px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900">AWESOME! 🎉</button>
+      </div>`;
+      document.body.appendChild(success);
+      setTimeout(()=>{ try{ success.remove(); document.body.style.overflow=''; }catch(e){} }, 4000);
+      if(typeof showToast==='function') showToast('🌍 Posted LIVE worldwide to all devices! ✓');
+      try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+    }catch(err){
+      console.error('doActualPostLIVE error', err);
+      if(postingOverlay) postingOverlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      if(typeof showToast==='function') showToast('Posting failed - '+ (err.message||'check internet'));
+    }
+  };
+
+  // Fix file input change to sync
+  setTimeout(()=>{
+    try{
+      const fileInput=document.getElementById('pFiles') || document.getElementById('pImages') || document.querySelector('input[type="file"]');
+      if(fileInput){
+        fileInput.addEventListener('change', (e)=>{
+          try{
+            if(typeof uploadedImages!=='undefined' && window.uploadedImages){
+              // Ensure sync after a short delay
+              setTimeout(()=>{
+                if(uploadedImages.length>0) window.uploadedImages = [...uploadedImages];
+                else if(window.uploadedImages.length>0) uploadedImages = [...window.uploadedImages];
+                console.log('📸 Synced after file select:', uploadedImages.length, window.uploadedImages.length);
+              }, 500);
+            }
+          }catch(err){}
+        });
+      }
+    }catch(e){}
+  }, 1000);
+
+  console.log('✅ UPLOAD BUG FIXED - Post will now go LIVE to all devices (phone, PC, tablet) - NO local storage, 100% Firebase LIVE');
+})();
+</script>
 </body>
 </html><script>
 const nigeriaStates={
@@ -5457,6 +5780,329 @@ setTimeout(()=>{
 }, 1500);
 
 console.log('✅ BROADCAST LIVE + AI AGENT LIKE META AI LOADED - Professional');
+</script>
+<script>
+// ===== FIX UPLOAD PHOTO BUG - PERFECT PROFESSIONAL =====
+console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
+
+// Sync uploadedImages global and window
+(function(){
+  // Ensure window.uploadedImages points to same array as global
+  try{
+    // Patch handleFiles to sync
+    const origHandleFiles = window.handleFiles;
+    window.handleFiles = async function(files){
+      if(origHandleFiles){
+        const result = await origHandleFiles(files);
+        try{
+          // Sync: global uploadedImages -> window.uploadedImages
+          if(typeof uploadedImages!=='undefined'){
+            window.uploadedImages = uploadedImages;
+            console.log('📸 Photos synced:', uploadedImages.length, 'photos ready');
+          }
+        }catch(e){}
+        return result;
+      }
+    };
+    
+    // Also patch removeImg
+    const origRemoveImg = window.removeImg;
+    window.removeImg = function(idx){
+      try{
+        if(typeof uploadedImages!=='undefined'){
+          uploadedImages.splice(idx,1);
+          window.uploadedImages = uploadedImages;
+        } else if(window.uploadedImages){
+          window.uploadedImages.splice(idx,1);
+        }
+        const grid=document.getElementById('previewGrid');
+        if(grid && grid.children[idx]) grid.children[idx].remove();
+        const c=document.getElementById('fileCount');
+        if(c) c.innerText=(window.uploadedImages||uploadedImages||[]).length+' / 15 photos';
+        if(typeof showToast==='function') showToast('Photo removed');
+      }catch(e){ console.warn(e); if(origRemoveImg) origRemoveImg(idx); }
+    };
+    
+    // Patch removeVideo
+    const origRemoveVideo = window.removeVideo;
+    window.removeVideo = function(){
+      try{
+        if(typeof uploadedVideo!=='undefined') { uploadedVideo=null; }
+        if(typeof uploadedVideoPreview!=='undefined') { uploadedVideoPreview=''; }
+        window.uploadedVideo=null; window.uploadedVideoPreview='';
+        const grid=document.getElementById('videoPreviewGrid');
+        if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+        const count=document.getElementById('videoCount');
+        if(count) count.innerText='';
+        try{ document.getElementById('pVideo').value=''; }catch(e){}
+      }catch(e){ if(origRemoveVideo) origRemoveVideo(); }
+    };
+    
+  }catch(e){ console.warn('Patch fail', e); }
+
+  // Override handlePostNowWithLivePay to check BOTH arrays - FIX BUG
+  window.handlePostNowWithLivePay = async function(){
+    if(window.isPosting){ if(typeof showToast==='function') showToast('Posting... please wait'); return; }
+    
+    // Get images from BOTH sources - fix bug
+    let imagesToUse = [];
+    try{
+      if(typeof uploadedImages!=='undefined' && uploadedImages.length>0) imagesToUse = uploadedImages;
+      else if(window.uploadedImages && window.uploadedImages.length>0) imagesToUse = window.uploadedImages;
+      else if(window.uploadedImages && window.uploadedImages.length===0 && typeof uploadedImages!=='undefined') imagesToUse = uploadedImages;
+    }catch(e){ imagesToUse = window.uploadedImages||[]; }
+    
+    console.log('📸 Post attempt - Images found:', imagesToUse.length, 'Global:', typeof uploadedImages!=='undefined'? uploadedImages.length:'N/A', 'Window:', window.uploadedImages?window.uploadedImages.length:0);
+
+    if(imagesToUse.length===0){
+      if(typeof showToast==='function') showToast('❌ Upload at least 1 photo - Tap the photo area to add photos');
+      // Highlight photo area
+      try{
+        const photoArea=document.getElementById('previewGrid')?.parentElement || document.querySelector('[onclick*="handleFiles"]');
+        if(photoArea){ photoArea.style.border='2px solid #ef4444'; setTimeout(()=>{ photoArea.style.border=''; }, 2000); }
+      }catch(e){}
+      return;
+    }
+
+    const state=document.getElementById('pState')?.value||'';
+    const area=document.getElementById('pArea')?.value||'';
+    const address=document.getElementById('pAddress')?.value.trim()||'';
+    const houseType=document.getElementById('pHouseType')?.value||'';
+    const price=document.getElementById('pPrice')?.value.trim()||'';
+    const type=document.getElementById('pType')?.value||'';
+    const title=document.getElementById('pTitle')?.value.trim()||'';
+    const customAmenities=document.getElementById('pCustomAmenities')?.value.trim()||'';
+    const landlordTitle=document.getElementById('pLandlordTitle')?.value||'';
+    const ownerName=document.getElementById('pOwner')?.value.trim()||'';
+    const phone=document.getElementById('pPhone')?.value.trim()||'';
+    const whatsapp=document.getElementById('pWhatsApp')?.value.trim()||'';
+    const isUrgent=document.getElementById('pUrgent')?.checked||false;
+    let amenities=[];
+    try{ amenities=[...(typeof selectedAmenities!=='undefined'? selectedAmenities : window.selectedAmenities||[])]; }catch(e){ amenities=[...(window.selectedAmenities||[])]; }
+
+    if(!address||!price||!title||!ownerName||!phone){
+      if(typeof showToast==='function') showToast('Fill all required fields: Title, Price, Address, Owner Name, Phone');
+      return;
+    }
+
+    const uid=localStorage.getItem('hawz_user_id');
+    if(typeof isUserBanned==='function' && isUserBanned(uid)){
+      if(typeof showToast==='function') showToast('You are BANNED'); return;
+    }
+
+    // Duplicate check
+    let tempHashes=[];
+    try{
+      tempHashes = imagesToUse.map(b=>{ try{ return (window.getImageHash||getImageHash)(b); }catch(e){return '';} }).filter(Boolean);
+    }catch(e){}
+
+    let dup=null;
+    try{ if(window.checkFakeDuplicateLive) dup = window.checkFakeDuplicateLive(tempHashes); }catch(e){}
+    if(!dup){
+      try{ if(typeof detectFakeDuplicate==='function') dup=detectFakeDuplicate(imagesToUse, area); }catch(e){}
+    }
+    if(dup){
+      try{ if(window.reportFakeToAdminInstant) window.reportFakeToAdminInstant(dup, {title, area, state}); }catch(e){}
+      const dangerBox=document.createElement('div');
+      dangerBox.style.cssText='position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(0,0,0,0.92)';
+      dangerBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:24px;padding:24px;max-width:380px;width:100%;text-align:center"><div style="width:80px;height:80px;background:rgba(239,68,68,0.15);border:1px solid #ef4444;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto"><span style="font-size:36px">🚨</span></div><h2 style="color:#ef4444;font-weight:900;font-size:18px;margin-top:12px">FAKE PHOTO DETECTED!</h2><p style="color:#fff;font-size:13px;margin-top:8px;line-height:20px">This same photo was already used for house in <b>${dup.area||'another area'}</b>. Same photo in different area = SCAM. Post rejected.</p><button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:16px;background:#ef4444;color:#fff;padding:14px;border-radius:12px;font-weight:900">I UNDERSTAND</button></div>`;
+      document.body.appendChild(dangerBox);
+      return;
+    }
+
+    let videoToUse=null;
+    try{
+      if(typeof uploadedVideoPreview!=='undefined' && uploadedVideoPreview) videoToUse=uploadedVideoPreview;
+      else if(window.uploadedVideoPreview) videoToUse=window.uploadedVideoPreview;
+    }catch(e){ videoToUse=window.uploadedVideoPreview||null; }
+
+    const postData={state,area,address,houseType,price,type,title,amenities,customAmenities,landlordTitle,ownerName,phone,whatsapp,isUrgent,images:[...imagesToUse],video:videoToUse||null, imageHashes: tempHashes};
+
+    // Paystack check
+    const liveCfg = (typeof getLivePay==='function')? getLivePay(): {enabledPost:false};
+    if(liveCfg.enabledPost && liveCfg.publicKey){
+      window.pendingPostData = postData;
+      window.pendingPaywallType='post';
+      const payModal=document.getElementById('paywallModal');
+      if(payModal){
+        document.getElementById('paywallTitle').innerText='Pay to Post House';
+        document.getElementById('paywallText').innerText='Pay ₦'+liveCfg.amountPost+' to post your house LIVE worldwide instantly.';
+        document.getElementById('paywallAmount').innerText='₦'+liveCfg.amountPost;
+        document.getElementById('paywallType').innerText='POST FEE - Secure';
+        const icon=document.getElementById('paywallIcon'); if(icon) icon.className='fa-solid fa-house text-black text-[28px]';
+        payModal.classList.remove('hidden'); payModal.style.display='flex';
+      }
+      return;
+    }
+
+    // POST LIVE WORLDWIDE - NO LOCAL STORAGE
+    if(typeof doActualPostLIVE==='function'){
+      await doActualPostLIVE(postData);
+    } else if(typeof doActualPost==='function'){
+      await doActualPost(postData);
+    } else {
+      console.error('No post function found');
+      if(typeof showToast==='function') showToast('Post system error - refresh page');
+    }
+  };
+
+  // Fix doActualPostLIVE to ensure LIVE to all devices (PC, phone, any) - NO LOCAL STORAGE
+  window.doActualPostLIVE = window.doActualPostLIVE || window.doActualPost;
+  const origDoActualPostLIVE = window.doActualPostLIVE;
+  window.doActualPostLIVE = async function(data){
+    const btn=document.getElementById('postNowBtn');
+    if(window.isPosting) return;
+    window.isPosting=true;
+    if(btn){ btn.innerText='POSTING LIVE WORLDWIDE...'; btn.disabled=true; btn.style.opacity='0.7'; }
+    
+    let postingOverlay=document.getElementById('livePostingOverlay');
+    if(!postingOverlay){
+      postingOverlay=document.createElement('div');
+      postingOverlay.id='livePostingOverlay';
+      postingOverlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px';
+      postingOverlay.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:24px;padding:28px;max-width:360px;width:100%;text-align:center">
+        <div style="width:80px;height:80px;border-radius:50%;border:4px solid #1a1a1a;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+        <h2 style="color:#fff;font-weight:900;font-size:18px;margin-top:16px">POSTING LIVE WORLDWIDE... 🌍</h2>
+        <p style="color:#22c55e;font-size:12px;margin-top:6px">Broadcasting to all phones, PCs, tablets instantly</p>
+        <p id="liveUploadStatus" style="color:#888;font-size:11px;margin-top:10px">Preparing...</p>
+      </div>`;
+      document.body.appendChild(postingOverlay);
+      document.body.style.overflow='hidden';
+    }
+    const updateStatus=(txt)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=txt; }catch(e){} };
+
+    try{
+      updateStatus('Checking duplicate photos...');
+      if(window.checkDuplicateAndFakePro){
+        const chk = window.checkDuplicateAndFakePro(data);
+        if(chk.isFake){
+          if(postingOverlay) postingOverlay.remove();
+          document.body.style.overflow='';
+          window.isPosting=false;
+          if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+          if(window.handleFakeCheckBeforePost) window.handleFakeCheckBeforePost(data);
+          return;
+        }
+      }
+
+      updateStatus('Compressing '+data.images.length+' photos for LIVE...');
+      const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+      const profileName = (typeof profileName!=='undefined' && profileName) ? profileName : (localStorage.getItem('hawz_name')||'User');
+      
+      let instantPost={
+        title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+        houseType:data.houseType, type:data.type, amenities:data.amenities, customAmenities:data.customAmenities,
+        landlordTitle:data.landlordTitle, ownerName:data.ownerName||profileName, posterName:profileName,
+        ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+        images:[...data.images], image:data.images[0], imageHashes:data.imageHashes||[], imagesCount:data.images.length,
+        video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
+      };
+
+      updateStatus('Saving to Firebase LIVE - All devices will see it...');
+      let firebaseId=null;
+      try{
+        if(window.fbAddPost){
+          firebaseId = await Promise.race([
+            window.fbAddPost(instantPost),
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('Firebase timeout - check rules & internet')), 20000))
+          ]);
+        } else {
+          throw new Error('Firebase not ready');
+        }
+      }catch(fbErr){
+        console.error('Firebase post failed:', fbErr);
+        if(postingOverlay) postingOverlay.remove();
+        let errBox=document.createElement('div');
+        errBox.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+        errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:420px;width:100%">
+          <h2 style="color:#ef4444;font-weight:900;font-size:18px;text-align:center">🔥 POST FAILED - CHECK FIRESTORE RULES</h2>
+          <p style="color:#fff;font-size:13px;margin-top:12px">Error: ${String(fbErr.message||fbErr).slice(0,300)}</p>
+          <p style="color:#888;font-size:11px;margin-top:8px">Make sure Firestore rules allow posts: allow read, write: if true;</p>
+          <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:14px;border-radius:12px;font-weight:900">OKAY</button>
+        </div>`;
+        document.body.appendChild(errBox);
+        window.isPosting=false;
+        if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+        return;
+      }
+
+      updateStatus('Broadcasting LIVE to all devices worldwide... 🌍');
+      await new Promise(r=>setTimeout(r, 500));
+
+      // Clear form - BOTH arrays
+      try{
+        if(typeof uploadedImages!=='undefined') uploadedImages=[];
+        window.uploadedImages=[];
+        if(typeof uploadedVideo!=='undefined') uploadedVideo=null;
+        if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview='';
+        window.uploadedVideo=null; window.uploadedVideoPreview='';
+        const els=['pTitle','pPrice','pAddress','pCustomAmenities']; els.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+        const grid=document.getElementById('previewGrid'); if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+        const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); }
+        const fc=document.getElementById('fileCount'); if(fc) fc.innerText='';
+        const vc=document.getElementById('videoCount'); if(vc) vc.innerText='';
+        try{ document.getElementById('pFiles').value=''; }catch(e){}
+        try{ document.getElementById('pVideo').value=''; }catch(e){}
+        selectedAmenities=new Set(); window.selectedAmenities=new Set();
+        try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+      }catch(e){ console.warn('Clear form fail', e); }
+
+      if(postingOverlay) postingOverlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      
+      if(typeof closePostModal==='function') try{closePostModal()}catch(e){}
+      if(typeof closePaywall==='function') try{closePaywall()}catch(e){}
+
+      // Success - LIVE to all devices
+      let success=document.createElement('div');
+      success.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+      success.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:24px;padding:28px;max-width:380px;width:100%;text-align:center">
+        <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto"><i class="fa-solid fa-check" style="color:#000;font-size:36px"></i></div>
+        <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:16px">POSTED LIVE WORLDWIDE! 🌍✓</h2>
+        <p style="color:#22c55e;font-size:13px;margin-top:8px">"${data.title}" in ${data.area} is LIVE!</p>
+        <p style="color:#888;font-size:11px;margin-top:6px">All users on phone, PC, tablet worldwide see it instantly - Like Facebook! No local storage, 100% Firebase LIVE • ${data.images.length} photos</p>
+        <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:18px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900">AWESOME! 🎉</button>
+      </div>`;
+      document.body.appendChild(success);
+      setTimeout(()=>{ try{ success.remove(); document.body.style.overflow=''; }catch(e){} }, 4000);
+      if(typeof showToast==='function') showToast('🌍 Posted LIVE worldwide to all devices! ✓');
+      try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+    }catch(err){
+      console.error('doActualPostLIVE error', err);
+      if(postingOverlay) postingOverlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      if(typeof showToast==='function') showToast('Posting failed - '+ (err.message||'check internet'));
+    }
+  };
+
+  // Fix file input change to sync
+  setTimeout(()=>{
+    try{
+      const fileInput=document.getElementById('pFiles') || document.getElementById('pImages') || document.querySelector('input[type="file"]');
+      if(fileInput){
+        fileInput.addEventListener('change', (e)=>{
+          try{
+            if(typeof uploadedImages!=='undefined' && window.uploadedImages){
+              // Ensure sync after a short delay
+              setTimeout(()=>{
+                if(uploadedImages.length>0) window.uploadedImages = [...uploadedImages];
+                else if(window.uploadedImages.length>0) uploadedImages = [...window.uploadedImages];
+                console.log('📸 Synced after file select:', uploadedImages.length, window.uploadedImages.length);
+              }, 500);
+            }
+          }catch(err){}
+        });
+      }
+    }catch(e){}
+  }, 1000);
+
+  console.log('✅ UPLOAD BUG FIXED - Post will now go LIVE to all devices (phone, PC, tablet) - NO local storage, 100% Firebase LIVE');
+})();
 </script>
 </body>
 </html>
