@@ -2786,6 +2786,304 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
   console.log('✅ UPLOAD BUG FIXED - Post will now go LIVE to all devices (phone, PC, tablet) - NO local storage, 100% Firebase LIVE');
 })();
 </script>
+<script>
+// ===== FIX profileName ERROR - PERFECT =====
+(function(){
+  // Patch the function that caused error
+  const origDoActual = window.doActualPostLIVE;
+  window.doActualPostLIVE = async function(data){
+    const btn=document.getElementById('postNowBtn');
+    if(window.isPosting) return;
+    window.isPosting=true;
+    if(btn){ btn.innerText='POSTING LIVE WORLDWIDE...'; btn.disabled=true; btn.style.opacity='0.7'; }
+    
+    let postingOverlay=document.getElementById('livePostingOverlay');
+    if(!postingOverlay){
+      postingOverlay=document.createElement('div');
+      postingOverlay.id='livePostingOverlay';
+      postingOverlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px';
+      postingOverlay.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:24px;padding:28px;max-width:360px;width:100%;text-align:center">
+        <div style="width:80px;height:80px;border-radius:50%;border:4px solid #1a1a1a;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+        <h2 style="color:#fff;font-weight:900;font-size:18px;margin-top:16px">POSTING LIVE WORLDWIDE... 🌍</h2>
+        <p style="color:#22c55e;font-size:12px;margin-top:6px">Broadcasting to all phones, PCs, tablets instantly</p>
+        <p id="liveUploadStatus" style="color:#888;font-size:11px;margin-top:10px">Preparing...</p>
+      </div>`;
+      document.body.appendChild(postingOverlay);
+      document.body.style.overflow='hidden';
+    }
+    const updateStatus=(txt)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=txt; }catch(e){} };
+
+    try{
+      updateStatus('Checking duplicate photos...');
+      if(window.checkDuplicateAndFakePro){
+        const chk = window.checkDuplicateAndFakePro(data);
+        if(chk.isFake){
+          if(postingOverlay) postingOverlay.remove();
+          document.body.style.overflow='';
+          window.isPosting=false;
+          if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+          if(window.handleFakeCheckBeforePost) window.handleFakeCheckBeforePost(data);
+          return;
+        }
+      }
+
+      updateStatus('Compressing '+data.images.length+' photos for LIVE...');
+      const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+      // FIX: Safe profileName - NEVER access let variable before init
+      let safeProfileName = 'User';
+      try{
+        safeProfileName = localStorage.getItem('hawz_name') || localStorage.getItem('hawz_profileName') || 'User';
+        // Try global if exists and initialized
+        if(typeof profileName !== 'undefined' && profileName) safeProfileName = profileName;
+        else if(window.profileName && typeof window.profileName === 'string') safeProfileName = window.profileName;
+      }catch(e){ safeProfileName = localStorage.getItem('hawz_name')||'User'; }
+
+      let instantPost={
+        title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+        houseType:data.houseType, type:data.type, amenities:data.amenities, customAmenities:data.customAmenities,
+        landlordTitle:data.landlordTitle, ownerName:data.ownerName||safeProfileName, posterName:safeProfileName,
+        ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+        images:[...data.images], image:data.images[0], imageHashes:data.imageHashes||[], imagesCount:data.images.length,
+        video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
+      };
+
+      updateStatus('Saving to Firebase LIVE - All devices will see it...');
+      let firebaseId=null;
+      try{
+        if(window.fbAddPost){
+          firebaseId = await Promise.race([
+            window.fbAddPost(instantPost),
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('Firebase timeout - check rules & internet')), 25000))
+          ]);
+        } else {
+          throw new Error('Firebase not ready - refresh page');
+        }
+      }catch(fbErr){
+        console.error('Firebase post failed:', fbErr);
+        if(postingOverlay) postingOverlay.remove();
+        let errBox=document.createElement('div');
+        errBox.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+        errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:420px;width:100%">
+          <h2 style="color:#ef4444;font-weight:900;font-size:18px;text-align:center">🔥 POST FAILED</h2>
+          <p style="color:#fff;font-size:13px;margin-top:12px">Error: ${String(fbErr.message||fbErr).slice(0,300)}</p>
+          <p style="color:#888;font-size:11px;margin-top:8px">Make sure Firestore rules allow: allow read, write: if true; in posts collection</p>
+          <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:14px;border-radius:12px;font-weight:900">OKAY</button>
+        </div>`;
+        document.body.appendChild(errBox);
+        window.isPosting=false;
+        if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+        return;
+      }
+
+      updateStatus('Broadcasting LIVE to all devices worldwide... 🌍');
+      await new Promise(r=>setTimeout(r, 500));
+
+      // Clear form - BOTH arrays - SAFE
+      try{
+        try{ if(typeof uploadedImages!=='undefined') uploadedImages=[]; }catch(e){}
+        window.uploadedImages=[];
+        try{ if(typeof uploadedVideo!=='undefined') uploadedVideo=null; }catch(e){}
+        try{ if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview=''; }catch(e){}
+        window.uploadedVideo=null; window.uploadedVideoPreview='';
+        const els=['pTitle','pPrice','pAddress','pCustomAmenities']; els.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+        const grid=document.getElementById('previewGrid'); if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+        const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); }
+        const fc=document.getElementById('fileCount'); if(fc) fc.innerText='';
+        const vc=document.getElementById('videoCount'); if(vc) vc.innerText='';
+        try{ document.getElementById('pFiles').value=''; }catch(e){}
+        try{ document.getElementById('pVideo').value=''; }catch(e){}
+        try{ selectedAmenities=new Set(); }catch(e){}
+        try{ window.selectedAmenities=new Set(); }catch(e){}
+        try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+      }catch(e){ console.warn('Clear form fail', e); }
+
+      if(postingOverlay) postingOverlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      
+      if(typeof closePostModal==='function') try{closePostModal()}catch(e){}
+      if(typeof closePaywall==='function') try{closePaywall()}catch(e){}
+
+      // Success - LIVE to all devices
+      let success=document.createElement('div');
+      success.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+      success.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:24px;padding:28px;max-width:380px;width:100%;text-align:center">
+        <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto"><i class="fa-solid fa-check" style="color:#000;font-size:36px"></i></div>
+        <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:16px">POSTED LIVE WORLDWIDE! 🌍✓</h2>
+        <p style="color:#22c55e;font-size:13px;margin-top:8px">"${data.title}" in ${data.area} is LIVE!</p>
+        <p style="color:#888;font-size:11px;margin-top:6px">All users on phone, PC, tablet worldwide see it instantly - Like Facebook! 100% Firebase LIVE • ${data.images.length} photos</p>
+        <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:18px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900">AWESOME! 🎉</button>
+      </div>`;
+      document.body.appendChild(success);
+      setTimeout(()=>{ try{ success.remove(); document.body.style.overflow=''; }catch(e){} }, 4000);
+      if(typeof showToast==='function') showToast('🌍 Posted LIVE worldwide to all devices! ✓');
+      try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+    }catch(err){
+      console.error('doActualPostLIVE error', err);
+      let overlay=document.getElementById('livePostingOverlay'); if(overlay) overlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      if(typeof showToast==='function') showToast('Posting failed - '+ (err.message||'check internet'));
+    }
+  };
+  console.log('✅ profileName BUG FIXED - Posting will now go LIVE to all devices!');
+})();
+</script>
+<script>
+// ===== FIX POSTING TEXT TO SHOW EXACTLY WHAT USER WANTS =====
+(function(){
+  const origDoActual = window.doActualPostLIVE;
+  window.doActualPostLIVE = async function(data){
+    const btn=document.getElementById('postNowBtn');
+    if(window.isPosting) return;
+    window.isPosting=true;
+    if(btn){ btn.innerText='POSTING... PLEASE WAIT'; btn.disabled=true; btn.style.opacity='0.7'; }
+    
+    let postingOverlay=document.getElementById('livePostingOverlay');
+    if(!postingOverlay){
+      postingOverlay=document.createElement('div');
+      postingOverlay.id='livePostingOverlay';
+      postingOverlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;padding:20px';
+      postingOverlay.innerHTML=`<div style="background:#111;border:2px solid #22c55e;border-radius:20px;padding:28px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.8)">
+        <div style="width:70px;height:70px;border-radius:50%;border:4px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+        <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:18px;letter-spacing:1px">POSTING... PLEASE WAIT</h2>
+        <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px;font-weight:600">Uploading to worldwide LIVE...</p>
+      </div>`;
+      document.body.appendChild(postingOverlay);
+      document.body.style.overflow='hidden';
+    } else {
+      // Update existing overlay text to exact wording user wants
+      try{
+        const h2=postingOverlay.querySelector('h2'); if(h2) h2.innerText='POSTING... PLEASE WAIT';
+        postingOverlay.style.display='flex';
+      }catch(e){}
+    }
+    const updateStatus=(txt)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=txt; }catch(e){} };
+
+    try{
+      updateStatus('Checking photos...');
+      // Duplicate check safe
+      if(window.checkDuplicateAndFakePro){
+        try{
+          const chk = window.checkDuplicateAndFakePro(data);
+          if(chk.isFake){
+            if(postingOverlay) postingOverlay.remove();
+            document.body.style.overflow='';
+            window.isPosting=false;
+            if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+            if(window.handleFakeCheckBeforePost) window.handleFakeCheckBeforePost(data);
+            return;
+          }
+        }catch(e){}
+      }
+
+      updateStatus('Uploading '+data.images.length+' photos...');
+      const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+      let safeProfileName='User';
+      try{
+        safeProfileName = localStorage.getItem('hawz_name') || localStorage.getItem('hawz_profileName') || 'User';
+        if(typeof profileName !== 'undefined' && profileName) safeProfileName = profileName;
+        else if(window.profileName && typeof window.profileName === 'string') safeProfileName = window.profileName;
+      }catch(e){ safeProfileName = localStorage.getItem('hawz_name')||'User'; }
+
+      let instantPost={
+        title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+        houseType:data.houseType, type:data.type, amenities:data.amenities, customAmenities:data.customAmenities,
+        landlordTitle:data.landlordTitle, ownerName:data.ownerName||safeProfileName, posterName:safeProfileName,
+        ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+        images:[...data.images], image:data.images[0], imageHashes:data.imageHashes||[], imagesCount:data.images.length,
+        video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
+      };
+
+      updateStatus('Saving LIVE to all devices...');
+      let firebaseId=null;
+      try{
+        if(window.fbAddPost){
+          firebaseId = await Promise.race([
+            window.fbAddPost(instantPost),
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('Firebase timeout')), 25000))
+          ]);
+        } else { throw new Error('Firebase not ready'); }
+      }catch(fbErr){
+        if(postingOverlay) postingOverlay.remove();
+        let errBox=document.createElement('div');
+        errBox.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+        errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:400px;width:100%;text-align:center">
+          <h2 style="color:#ef4444;font-weight:900;font-size:16px">POST FAILED</h2>
+          <p style="color:#fff;font-size:12px;margin-top:10px">${String(fbErr.message||fbErr).slice(0,250)}</p>
+          <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:12px;border-radius:12px;font-weight:900">OKAY</button>
+        </div>`;
+        document.body.appendChild(errBox);
+        window.isPosting=false;
+        if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+        return;
+      }
+
+      updateStatus('Done! Broadcasting...');
+      await new Promise(r=>setTimeout(r, 300));
+
+      // Clear form
+      try{
+        try{ if(typeof uploadedImages!=='undefined') uploadedImages=[]; }catch(e){}
+        window.uploadedImages=[];
+        try{ if(typeof uploadedVideo!=='undefined') uploadedVideo=null; }catch(e){}
+        try{ if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview=''; }catch(e){}
+        window.uploadedVideo=null; window.uploadedVideoPreview='';
+        const els=['pTitle','pPrice','pAddress','pCustomAmenities']; els.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+        const grid=document.getElementById('previewGrid'); if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+        const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); }
+        const fc=document.getElementById('fileCount'); if(fc) fc.innerText='';
+        const vc=document.getElementById('videoCount'); if(vc) vc.innerText='';
+        try{ document.getElementById('pFiles').value=''; }catch(e){}
+        try{ document.getElementById('pVideo').value=''; }catch(e){}
+        try{ selectedAmenities=new Set(); }catch(e){}
+        try{ window.selectedAmenities=new Set(); }catch(e){}
+        try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+      }catch(e){}
+
+      if(postingOverlay) postingOverlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      
+      if(typeof closePostModal==='function') try{closePostModal()}catch(e){}
+      if(typeof closePaywall==='function') try{closePaywall()}catch(e){}
+
+      // POST SUCCESSFUL BOX WITH TICK - EXACTLY AS USER WANTS - PROFESSIONAL
+      let success=document.createElement('div');
+      success.id='postSuccessfulBox';
+      success.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.3s ease';
+      success.innerHTML=`<style>@keyframes fadeIn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}} @keyframes tickPop{0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)}} </style>
+      <div style="background:#101010;border:2px solid #22c55e;border-radius:24px;padding:32px 28px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(34,197,94,0.3)">
+        <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;animation:tickPop 0.5s ease">
+          <i class="fa-solid fa-check" style="color:#000;font-size:38px;font-weight:900"></i>
+        </div>
+        <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:18px;letter-spacing:0.5px">POST SUCCESSFUL ✓</h2>
+        <p style="color:#22c55e;font-size:13px;margin-top:8px;font-weight:700">"${data.title}" is now LIVE worldwide!</p>
+        <p style="color:#888;font-size:11px;margin-top:6px">All users on phone, PC, tablet will see it instantly • ${data.images.length} photos • LIVE like Facebook</p>
+        <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:20px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900;font-size:14px;letter-spacing:0.5px">OKAY ✓</button>
+      </div>`;
+      document.body.appendChild(success);
+      // Auto remove after 4 sec
+      setTimeout(()=>{ try{ const el=document.getElementById('postSuccessfulBox'); if(el) el.remove(); document.body.style.overflow=''; }catch(e){} }, 4000);
+      if(typeof showToast==='function') showToast('POST SUCCESSFUL ✓ - LIVE worldwide');
+      try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+    }catch(err){
+      console.error('Post error', err);
+      let overlay=document.getElementById('livePostingOverlay'); if(overlay) overlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      if(typeof showToast==='function') showToast('Posting failed - '+ (err.message||'check internet'));
+    }
+  };
+  console.log('✅ POSTING TEXT FIXED: Shows POSTING... PLEASE WAIT then POST SUCCESSFUL with tick - Professional');
+})();
+</script>
 </body>
 </html><script>
 const nigeriaStates={
@@ -6102,6 +6400,304 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
   }, 1000);
 
   console.log('✅ UPLOAD BUG FIXED - Post will now go LIVE to all devices (phone, PC, tablet) - NO local storage, 100% Firebase LIVE');
+})();
+</script>
+<script>
+// ===== FIX profileName ERROR - PERFECT =====
+(function(){
+  // Patch the function that caused error
+  const origDoActual = window.doActualPostLIVE;
+  window.doActualPostLIVE = async function(data){
+    const btn=document.getElementById('postNowBtn');
+    if(window.isPosting) return;
+    window.isPosting=true;
+    if(btn){ btn.innerText='POSTING LIVE WORLDWIDE...'; btn.disabled=true; btn.style.opacity='0.7'; }
+    
+    let postingOverlay=document.getElementById('livePostingOverlay');
+    if(!postingOverlay){
+      postingOverlay=document.createElement('div');
+      postingOverlay.id='livePostingOverlay';
+      postingOverlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px';
+      postingOverlay.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:24px;padding:28px;max-width:360px;width:100%;text-align:center">
+        <div style="width:80px;height:80px;border-radius:50%;border:4px solid #1a1a1a;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+        <h2 style="color:#fff;font-weight:900;font-size:18px;margin-top:16px">POSTING LIVE WORLDWIDE... 🌍</h2>
+        <p style="color:#22c55e;font-size:12px;margin-top:6px">Broadcasting to all phones, PCs, tablets instantly</p>
+        <p id="liveUploadStatus" style="color:#888;font-size:11px;margin-top:10px">Preparing...</p>
+      </div>`;
+      document.body.appendChild(postingOverlay);
+      document.body.style.overflow='hidden';
+    }
+    const updateStatus=(txt)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=txt; }catch(e){} };
+
+    try{
+      updateStatus('Checking duplicate photos...');
+      if(window.checkDuplicateAndFakePro){
+        const chk = window.checkDuplicateAndFakePro(data);
+        if(chk.isFake){
+          if(postingOverlay) postingOverlay.remove();
+          document.body.style.overflow='';
+          window.isPosting=false;
+          if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+          if(window.handleFakeCheckBeforePost) window.handleFakeCheckBeforePost(data);
+          return;
+        }
+      }
+
+      updateStatus('Compressing '+data.images.length+' photos for LIVE...');
+      const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+      // FIX: Safe profileName - NEVER access let variable before init
+      let safeProfileName = 'User';
+      try{
+        safeProfileName = localStorage.getItem('hawz_name') || localStorage.getItem('hawz_profileName') || 'User';
+        // Try global if exists and initialized
+        if(typeof profileName !== 'undefined' && profileName) safeProfileName = profileName;
+        else if(window.profileName && typeof window.profileName === 'string') safeProfileName = window.profileName;
+      }catch(e){ safeProfileName = localStorage.getItem('hawz_name')||'User'; }
+
+      let instantPost={
+        title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+        houseType:data.houseType, type:data.type, amenities:data.amenities, customAmenities:data.customAmenities,
+        landlordTitle:data.landlordTitle, ownerName:data.ownerName||safeProfileName, posterName:safeProfileName,
+        ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+        images:[...data.images], image:data.images[0], imageHashes:data.imageHashes||[], imagesCount:data.images.length,
+        video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
+      };
+
+      updateStatus('Saving to Firebase LIVE - All devices will see it...');
+      let firebaseId=null;
+      try{
+        if(window.fbAddPost){
+          firebaseId = await Promise.race([
+            window.fbAddPost(instantPost),
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('Firebase timeout - check rules & internet')), 25000))
+          ]);
+        } else {
+          throw new Error('Firebase not ready - refresh page');
+        }
+      }catch(fbErr){
+        console.error('Firebase post failed:', fbErr);
+        if(postingOverlay) postingOverlay.remove();
+        let errBox=document.createElement('div');
+        errBox.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+        errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:420px;width:100%">
+          <h2 style="color:#ef4444;font-weight:900;font-size:18px;text-align:center">🔥 POST FAILED</h2>
+          <p style="color:#fff;font-size:13px;margin-top:12px">Error: ${String(fbErr.message||fbErr).slice(0,300)}</p>
+          <p style="color:#888;font-size:11px;margin-top:8px">Make sure Firestore rules allow: allow read, write: if true; in posts collection</p>
+          <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:14px;border-radius:12px;font-weight:900">OKAY</button>
+        </div>`;
+        document.body.appendChild(errBox);
+        window.isPosting=false;
+        if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+        return;
+      }
+
+      updateStatus('Broadcasting LIVE to all devices worldwide... 🌍');
+      await new Promise(r=>setTimeout(r, 500));
+
+      // Clear form - BOTH arrays - SAFE
+      try{
+        try{ if(typeof uploadedImages!=='undefined') uploadedImages=[]; }catch(e){}
+        window.uploadedImages=[];
+        try{ if(typeof uploadedVideo!=='undefined') uploadedVideo=null; }catch(e){}
+        try{ if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview=''; }catch(e){}
+        window.uploadedVideo=null; window.uploadedVideoPreview='';
+        const els=['pTitle','pPrice','pAddress','pCustomAmenities']; els.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+        const grid=document.getElementById('previewGrid'); if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+        const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); }
+        const fc=document.getElementById('fileCount'); if(fc) fc.innerText='';
+        const vc=document.getElementById('videoCount'); if(vc) vc.innerText='';
+        try{ document.getElementById('pFiles').value=''; }catch(e){}
+        try{ document.getElementById('pVideo').value=''; }catch(e){}
+        try{ selectedAmenities=new Set(); }catch(e){}
+        try{ window.selectedAmenities=new Set(); }catch(e){}
+        try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+      }catch(e){ console.warn('Clear form fail', e); }
+
+      if(postingOverlay) postingOverlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      
+      if(typeof closePostModal==='function') try{closePostModal()}catch(e){}
+      if(typeof closePaywall==='function') try{closePaywall()}catch(e){}
+
+      // Success - LIVE to all devices
+      let success=document.createElement('div');
+      success.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+      success.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:24px;padding:28px;max-width:380px;width:100%;text-align:center">
+        <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto"><i class="fa-solid fa-check" style="color:#000;font-size:36px"></i></div>
+        <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:16px">POSTED LIVE WORLDWIDE! 🌍✓</h2>
+        <p style="color:#22c55e;font-size:13px;margin-top:8px">"${data.title}" in ${data.area} is LIVE!</p>
+        <p style="color:#888;font-size:11px;margin-top:6px">All users on phone, PC, tablet worldwide see it instantly - Like Facebook! 100% Firebase LIVE • ${data.images.length} photos</p>
+        <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:18px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900">AWESOME! 🎉</button>
+      </div>`;
+      document.body.appendChild(success);
+      setTimeout(()=>{ try{ success.remove(); document.body.style.overflow=''; }catch(e){} }, 4000);
+      if(typeof showToast==='function') showToast('🌍 Posted LIVE worldwide to all devices! ✓');
+      try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+    }catch(err){
+      console.error('doActualPostLIVE error', err);
+      let overlay=document.getElementById('livePostingOverlay'); if(overlay) overlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      if(typeof showToast==='function') showToast('Posting failed - '+ (err.message||'check internet'));
+    }
+  };
+  console.log('✅ profileName BUG FIXED - Posting will now go LIVE to all devices!');
+})();
+</script>
+<script>
+// ===== FIX POSTING TEXT TO SHOW EXACTLY WHAT USER WANTS =====
+(function(){
+  const origDoActual = window.doActualPostLIVE;
+  window.doActualPostLIVE = async function(data){
+    const btn=document.getElementById('postNowBtn');
+    if(window.isPosting) return;
+    window.isPosting=true;
+    if(btn){ btn.innerText='POSTING... PLEASE WAIT'; btn.disabled=true; btn.style.opacity='0.7'; }
+    
+    let postingOverlay=document.getElementById('livePostingOverlay');
+    if(!postingOverlay){
+      postingOverlay=document.createElement('div');
+      postingOverlay.id='livePostingOverlay';
+      postingOverlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;padding:20px';
+      postingOverlay.innerHTML=`<div style="background:#111;border:2px solid #22c55e;border-radius:20px;padding:28px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.8)">
+        <div style="width:70px;height:70px;border-radius:50%;border:4px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+        <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+        <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:18px;letter-spacing:1px">POSTING... PLEASE WAIT</h2>
+        <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px;font-weight:600">Uploading to worldwide LIVE...</p>
+      </div>`;
+      document.body.appendChild(postingOverlay);
+      document.body.style.overflow='hidden';
+    } else {
+      // Update existing overlay text to exact wording user wants
+      try{
+        const h2=postingOverlay.querySelector('h2'); if(h2) h2.innerText='POSTING... PLEASE WAIT';
+        postingOverlay.style.display='flex';
+      }catch(e){}
+    }
+    const updateStatus=(txt)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=txt; }catch(e){} };
+
+    try{
+      updateStatus('Checking photos...');
+      // Duplicate check safe
+      if(window.checkDuplicateAndFakePro){
+        try{
+          const chk = window.checkDuplicateAndFakePro(data);
+          if(chk.isFake){
+            if(postingOverlay) postingOverlay.remove();
+            document.body.style.overflow='';
+            window.isPosting=false;
+            if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+            if(window.handleFakeCheckBeforePost) window.handleFakeCheckBeforePost(data);
+            return;
+          }
+        }catch(e){}
+      }
+
+      updateStatus('Uploading '+data.images.length+' photos...');
+      const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+      let safeProfileName='User';
+      try{
+        safeProfileName = localStorage.getItem('hawz_name') || localStorage.getItem('hawz_profileName') || 'User';
+        if(typeof profileName !== 'undefined' && profileName) safeProfileName = profileName;
+        else if(window.profileName && typeof window.profileName === 'string') safeProfileName = window.profileName;
+      }catch(e){ safeProfileName = localStorage.getItem('hawz_name')||'User'; }
+
+      let instantPost={
+        title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+        houseType:data.houseType, type:data.type, amenities:data.amenities, customAmenities:data.customAmenities,
+        landlordTitle:data.landlordTitle, ownerName:data.ownerName||safeProfileName, posterName:safeProfileName,
+        ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+        images:[...data.images], image:data.images[0], imageHashes:data.imageHashes||[], imagesCount:data.images.length,
+        video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
+      };
+
+      updateStatus('Saving LIVE to all devices...');
+      let firebaseId=null;
+      try{
+        if(window.fbAddPost){
+          firebaseId = await Promise.race([
+            window.fbAddPost(instantPost),
+            new Promise((_,rej)=>setTimeout(()=>rej(new Error('Firebase timeout')), 25000))
+          ]);
+        } else { throw new Error('Firebase not ready'); }
+      }catch(fbErr){
+        if(postingOverlay) postingOverlay.remove();
+        let errBox=document.createElement('div');
+        errBox.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+        errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:400px;width:100%;text-align:center">
+          <h2 style="color:#ef4444;font-weight:900;font-size:16px">POST FAILED</h2>
+          <p style="color:#fff;font-size:12px;margin-top:10px">${String(fbErr.message||fbErr).slice(0,250)}</p>
+          <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:12px;border-radius:12px;font-weight:900">OKAY</button>
+        </div>`;
+        document.body.appendChild(errBox);
+        window.isPosting=false;
+        if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+        return;
+      }
+
+      updateStatus('Done! Broadcasting...');
+      await new Promise(r=>setTimeout(r, 300));
+
+      // Clear form
+      try{
+        try{ if(typeof uploadedImages!=='undefined') uploadedImages=[]; }catch(e){}
+        window.uploadedImages=[];
+        try{ if(typeof uploadedVideo!=='undefined') uploadedVideo=null; }catch(e){}
+        try{ if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview=''; }catch(e){}
+        window.uploadedVideo=null; window.uploadedVideoPreview='';
+        const els=['pTitle','pPrice','pAddress','pCustomAmenities']; els.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+        const grid=document.getElementById('previewGrid'); if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+        const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); }
+        const fc=document.getElementById('fileCount'); if(fc) fc.innerText='';
+        const vc=document.getElementById('videoCount'); if(vc) vc.innerText='';
+        try{ document.getElementById('pFiles').value=''; }catch(e){}
+        try{ document.getElementById('pVideo').value=''; }catch(e){}
+        try{ selectedAmenities=new Set(); }catch(e){}
+        try{ window.selectedAmenities=new Set(); }catch(e){}
+        try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+      }catch(e){}
+
+      if(postingOverlay) postingOverlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      
+      if(typeof closePostModal==='function') try{closePostModal()}catch(e){}
+      if(typeof closePaywall==='function') try{closePaywall()}catch(e){}
+
+      // POST SUCCESSFUL BOX WITH TICK - EXACTLY AS USER WANTS - PROFESSIONAL
+      let success=document.createElement('div');
+      success.id='postSuccessfulBox';
+      success.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.3s ease';
+      success.innerHTML=`<style>@keyframes fadeIn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}} @keyframes tickPop{0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)}} </style>
+      <div style="background:#101010;border:2px solid #22c55e;border-radius:24px;padding:32px 28px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(34,197,94,0.3)">
+        <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;animation:tickPop 0.5s ease">
+          <i class="fa-solid fa-check" style="color:#000;font-size:38px;font-weight:900"></i>
+        </div>
+        <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:18px;letter-spacing:0.5px">POST SUCCESSFUL ✓</h2>
+        <p style="color:#22c55e;font-size:13px;margin-top:8px;font-weight:700">"${data.title}" is now LIVE worldwide!</p>
+        <p style="color:#888;font-size:11px;margin-top:6px">All users on phone, PC, tablet will see it instantly • ${data.images.length} photos • LIVE like Facebook</p>
+        <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:20px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900;font-size:14px;letter-spacing:0.5px">OKAY ✓</button>
+      </div>`;
+      document.body.appendChild(success);
+      // Auto remove after 4 sec
+      setTimeout(()=>{ try{ const el=document.getElementById('postSuccessfulBox'); if(el) el.remove(); document.body.style.overflow=''; }catch(e){} }, 4000);
+      if(typeof showToast==='function') showToast('POST SUCCESSFUL ✓ - LIVE worldwide');
+      try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+    }catch(err){
+      console.error('Post error', err);
+      let overlay=document.getElementById('livePostingOverlay'); if(overlay) overlay.remove();
+      document.body.style.overflow='';
+      window.isPosting=false;
+      if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+      if(typeof showToast==='function') showToast('Posting failed - '+ (err.message||'check internet'));
+    }
+  };
+  console.log('✅ POSTING TEXT FIXED: Shows POSTING... PLEASE WAIT then POST SUCCESSFUL with tick - Professional');
 })();
 </script>
 </body>
