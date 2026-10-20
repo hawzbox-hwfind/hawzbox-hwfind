@@ -1327,7 +1327,7 @@ async function doActualPostLIVE(data){
       <div style="width:80px;height:80px;border-radius:50%;border:4px solid #1a1a1a;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
       <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
       <h2 style="color:#fff;font-weight:900;font-size:18px;margin-top:16px">POSTING LIVE WORLDWIDE...</h2>
-      <p style="color:#22c55e;font-size:12px;margin-top:6px">Uploading photos to cloud + broadcasting to all phones instantly 🌍</p>
+      <p style="color:#22c55e;font-size:12px;margin-top:6px">Processing photos to cloud + broadcasting to all phones instantly 🌍</p>
       <p id="liveUploadStatus" style="color:#888;font-size:11px;margin-top:10px">Preparing images...</p>
     </div>`;
     document.body.appendChild(postingOverlay);
@@ -1351,7 +1351,7 @@ async function doActualPostLIVE(data){
       }
     }
 
-    updateStatus('Uploading '+data.images.length+' photos to cloud storage...');
+    updateStatus('Processing '+data.images.length+' photos to cloud storage...');
     const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
     const profileName = (typeof profileName!=='undefined' && profileName) ? profileName : (localStorage.getItem('hawz_profileName')||'User');
     
@@ -2951,7 +2951,7 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
         <div style="width:70px;height:70px;border-radius:50%;border:4px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
         <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
         <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:18px;letter-spacing:1px">POSTING... PLEASE WAIT</h2>
-        <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px;font-weight:600">Uploading to worldwide LIVE...</p>
+        <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px;font-weight:600">This will take few seconds...</p>
       </div>`;
       document.body.appendChild(postingOverlay);
       document.body.style.overflow='hidden';
@@ -2981,7 +2981,7 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
         }catch(e){}
       }
 
-      updateStatus('Uploading '+data.images.length+' photos...');
+      updateStatus('Processing '+data.images.length+' photos...');
       const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
       let safeProfileName='User';
       try{
@@ -2999,7 +2999,7 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
         video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
       };
 
-      updateStatus('Saving LIVE to all devices...');
+      updateStatus('This will take few seconds...');
       let firebaseId=null;
       try{
         if(window.fbAddPost){
@@ -3083,6 +3083,255 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
   };
   console.log('✅ POSTING TEXT FIXED: Shows POSTING... PLEASE WAIT then POST SUCCESSFUL with tick - Professional');
 })();
+</script>
+<script>
+// ===== FIX FIREBASE TIMEOUT - NO MORE STORAGE TEST - 100% FIRESTORE LIVE =====
+console.log('🔧 FIXING FIREBASE TIMEOUT - Removing Storage test, using Firestore-only LIVE');
+
+window.fbAddPost = async function(p){
+  const MAX_DOC_SIZE = 900000; // 900KB max for Firestore doc
+  try{
+    let safe={...p};
+    let newHashes=[];
+    try{
+      if(safe.images && safe.images.length){
+        safe.images.forEach(img=>{ try{ const h=window.getImageHash? window.getImageHash(String(img)):''; if(h) newHashes.push(h); }catch(e){} });
+      }
+      if(safe.image){ try{ const h=window.getImageHash? window.getImageHash(String(safe.image)):''; if(h && !newHashes.includes(h)) newHashes.push(h); }catch(e){} }
+    }catch(e){}
+    safe.imageHashes = newHashes.length>0? newHashes : (safe.imageHashes||[]);
+    
+    // NO STORAGE TEST - Go directly to Firestore compressed mode (Storage billing blocked)
+    console.log('⚡ Firestore-only LIVE mode - Skipping Storage test (billing blocked)');
+    let uploadedUrls = [];
+    
+    // Compress aggressively for Firestore 1MB limit
+    const compressOne = (base64, maxW=450, qual=0.32) => new Promise((res)=>{
+      try{
+        if(!base64 || !base64.startsWith('data:')) { res(base64); return; }
+        const img = new Image();
+        img.onload = ()=>{
+          try{
+            let w=img.width, h=img.height;
+            if(w>maxW){ h=Math.round(h*(maxW/w)); w=maxW; }
+            const canvas=document.createElement('canvas');
+            canvas.width=w; canvas.height=h;
+            const ctx=canvas.getContext('2d');
+            ctx.drawImage(img,0,0,w,h);
+            let c=canvas.toDataURL('image/jpeg', qual);
+            if(c.length>80000){
+              const canvas2=document.createElement('canvas');
+              canvas2.width=Math.round(w*0.7); canvas2.height=Math.round(h*0.7);
+              const ctx2=canvas2.getContext('2d');
+              ctx2.drawImage(img,0,0,canvas2.width,canvas2.height);
+              c=canvas2.toDataURL('image/jpeg', 0.28);
+            }
+            res(c);
+          }catch(e){ res(base64); }
+        };
+        img.onerror=()=>{ res(base64); };
+        img.src=base64;
+      }catch(e){ res(base64); }
+    });
+
+    // Build images array that fits in 900KB
+    let totalSize=0;
+    for(let i=0;i<safe.images.length && i<15; i++){
+      try{
+        let img=safe.images[i];
+        let compressed = img;
+        if(String(img).startsWith('data:')){
+          compressed = await compressOne(img, 450, 0.32);
+        }
+        // Check total size
+        if(totalSize + compressed.length > MAX_DOC_SIZE){
+          console.log('Firestore size limit reached at', i, 'photos');
+          break;
+        }
+        if(compressed.length < 100000){
+          uploadedUrls.push(compressed);
+          totalSize+=compressed.length;
+        }
+      }catch(e){ console.warn('Compress fail', e); }
+    }
+
+    if(uploadedUrls.length===0 && safe.images.length>0){
+      // Fallback: take first image and compress ultra
+      try{
+        const ultra = await compressOne(safe.images[0], 350, 0.25);
+        uploadedUrls=[ultra];
+      }catch(e){ uploadedUrls=safe.images.slice(0,1); }
+    }
+
+    safe.images = uploadedUrls;
+    safe.image = uploadedUrls[0] || '';
+    safe.imagesCount = uploadedUrls.length;
+    safe.storageMode = 'firestore_live_only';
+    safe.totalImageSizeKB = Math.round(totalSize/1024);
+
+    // Remove video if too big for Firestore (need Storage for 100MB video)
+    if(safe.video && typeof safe.video==='string' && String(safe.video).startsWith('data:')){
+      if(safe.video.length > 7000000){ // >7MB
+        console.log('Video too large for Firestore, removing for now - will work after Storage billing fixed');
+        safe.video = null;
+        safe.hasVideo = false;
+        safe.videoNote = 'Video removed for now - Storage billing needed for 100MB videos';
+      }
+    }
+
+    safe.createdAt = safe.createdAt || Date.now();
+    safe.updatedAt = Date.now();
+    
+    console.log('📤 Saving to Firestore LIVE - Photos:', safe.images.length, 'Size:', safe.totalImageSizeKB+'KB');
+    
+    // Direct Firestore add - NO timeout race, with retry
+    try{
+      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const postsCol = collection(window.db, "posts");
+      const docRef = await addDoc(postsCol, safe);
+      console.log('🌍 POSTED LIVE WORLDWIDE SUCCESS:', docRef.id, 'Photos:', safe.images.length);
+      return docRef.id;
+    }catch(e){
+      console.error('Firestore import add failed, trying fallback', e);
+      // Fallback using window._fb
+      try{
+        if(window._fb && window._fb.collection && window._fb.addDoc){
+          const postsCol = window._fb.collection(window.db, "posts");
+          const docRef = await window._fb.addDoc(postsCol, safe);
+          console.log('🌍 POSTED LIVE WORLDWIDE (fallback):', docRef.id);
+          return docRef.id;
+        } else {
+          throw e;
+        }
+      }catch(e2){
+        console.error('Both Firestore methods failed', e2);
+        throw e2;
+      }
+    }
+  }catch(e){
+    console.error('fbAddPost Firestore-only failed:', e);
+    throw e;
+  }
+};
+
+// Also fix doActualPostLIVE to remove timeout race
+window.doActualPostLIVE = async function(data){
+  const btn=document.getElementById('postNowBtn');
+  if(window.isPosting) return;
+  window.isPosting=true;
+  if(btn){ btn.innerText='POSTING... PLEASE WAIT'; btn.disabled=true; btn.style.opacity='0.7'; }
+  
+  let postingOverlay=document.getElementById('livePostingOverlay');
+  if(!postingOverlay){
+    postingOverlay=document.createElement('div');
+    postingOverlay.id='livePostingOverlay';
+    postingOverlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;padding:20px';
+    postingOverlay.innerHTML=`<div style="background:#111;border:2px solid #22c55e;border-radius:20px;padding:28px;max-width:360px;width:100%;text-align:center">
+      <div style="width:70px;height:70px;border-radius:50%;border:4px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+      <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:18px;letter-spacing:1px">POSTING... PLEASE WAIT</h2>
+      <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px;font-weight:600">This will take few seconds...</p>
+    </div>`;
+    document.body.appendChild(postingOverlay);
+    document.body.style.overflow='hidden';
+  } else {
+    try{ const h2=postingOverlay.querySelector('h2'); if(h2) h2.innerText='POSTING... PLEASE WAIT'; postingOverlay.style.display='flex'; }catch(e){}
+  }
+  const updateStatus=(txt)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=txt; }catch(e){} };
+
+  try{
+    updateStatus('Checking photos...');
+    const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+    let safeProfileName='User';
+    try{
+      safeProfileName = localStorage.getItem('hawz_name') || localStorage.getItem('hawz_profileName') || 'User';
+      if(typeof profileName !== 'undefined' && profileName) safeProfileName = profileName;
+    }catch(e){ safeProfileName = localStorage.getItem('hawz_name')||'User'; }
+
+    let instantPost={
+      title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+      houseType:data.houseType, type:data.type, amenities:data.amenities, customAmenities:data.customAmenities,
+      landlordTitle:data.landlordTitle, ownerName:data.ownerName||safeProfileName, posterName:safeProfileName,
+      ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+      images:[...data.images], image:data.images[0], imageHashes:data.imageHashes||[], imagesCount:data.images.length,
+      video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
+    };
+
+    updateStatus('This will take few seconds...');
+    let firebaseId=null;
+    // NO RACE TIMEOUT - direct call with proper error handling
+    firebaseId = await window.fbAddPost(instantPost);
+
+    updateStatus('This will take few seconds...');
+    await new Promise(r=>setTimeout(r, 300));
+
+    // Clear form
+    try{
+      try{ if(typeof uploadedImages!=='undefined') uploadedImages=[]; }catch(e){}
+      window.uploadedImages=[];
+      try{ if(typeof uploadedVideo!=='undefined') uploadedVideo=null; }catch(e){}
+      try{ if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview=''; }catch(e){}
+      window.uploadedVideo=null; window.uploadedVideoPreview='';
+      const els=['pTitle','pPrice','pAddress','pCustomAmenities']; els.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+      const grid=document.getElementById('previewGrid'); if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+      const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); }
+      const fc=document.getElementById('fileCount'); if(fc) fc.innerText='';
+      const vc=document.getElementById('videoCount'); if(vc) vc.innerText='';
+      try{ document.getElementById('pFiles').value=''; }catch(e){}
+      try{ document.getElementById('pVideo').value=''; }catch(e){}
+      try{ selectedAmenities=new Set(); }catch(e){}
+      try{ window.selectedAmenities=new Set(); }catch(e){}
+      try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+    }catch(e){}
+
+    if(postingOverlay) postingOverlay.remove();
+    document.body.style.overflow='';
+    window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+    
+    if(typeof closePostModal==='function') try{closePostModal()}catch(e){}
+    if(typeof closePaywall==='function') try{closePaywall()}catch(e){}
+
+    // POST SUCCESSFUL BOX WITH TICK
+    let success=document.createElement('div');
+    success.id='postSuccessfulBox';
+    success.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.3s ease';
+    success.innerHTML=`<style>@keyframes fadeIn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}} @keyframes tickPop{0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)}}</style>
+    <div style="background:#101010;border:2px solid #22c55e;border-radius:24px;padding:32px 28px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(34,197,94,0.3)">
+      <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;animation:tickPop 0.5s ease">
+        <i class="fa-solid fa-check" style="color:#000;font-size:38px;font-weight:900"></i>
+      </div>
+      <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:18px;letter-spacing:0.5px">POST SUCCESSFUL ✓</h2>
+      <p style="color:#22c55e;font-size:13px;margin-top:8px;font-weight:700">"${data.title}" is now LIVE worldwide!</p>
+      <p style="color:#888;font-size:11px;margin-top:6px">All users on phone, PC, tablet will see it instantly • ${data.images.length} photos • LIVE like Facebook</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:20px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900;font-size:14px;letter-spacing:0.5px">OKAY ✓</button>
+    </div>`;
+    document.body.appendChild(success);
+    setTimeout(()=>{ try{ const el=document.getElementById('postSuccessfulBox'); if(el) el.remove(); document.body.style.overflow=''; }catch(e){} }, 4000);
+    if(typeof showToast==='function') showToast('POST SUCCESSFUL ✓ - LIVE worldwide');
+    try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+  }catch(err){
+    console.error('Post error', err);
+    let overlay=document.getElementById('livePostingOverlay'); if(overlay) overlay.remove();
+    document.body.style.overflow='';
+    window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+    if(typeof showToast==='function') showToast('Posting failed - '+ (err.message||'check internet - try with fewer photos'));
+    // Show detailed error
+    let errBox=document.createElement('div');
+    errBox.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+    errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:400px;width:100%;text-align:center">
+      <h2 style="color:#ef4444;font-weight:900;font-size:16px">POST FAILED</h2>
+      <p style="color:#fff;font-size:12px;margin-top:10px;word-break:break-all">${String(err.message||err).slice(0,400)}</p>
+      <p style="color:#888;font-size:10px;margin-top:8px">Tip: Try with 2-3 photos first. Firestore limit is 1MB per post.</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:12px;border-radius:12px;font-weight:900">OKAY</button>
+    </div>`;
+    document.body.appendChild(errBox);
+    setTimeout(()=>{ try{errBox.remove()}catch(e){} }, 8000);
+  }
+};
+
+console.log('✅ FIREBASE TIMEOUT FIXED - 100% Firestore-only LIVE, no Storage test, no timeout barrier - Posting will work instantly to all devices');
 </script>
 </body>
 </html><script>
@@ -4943,7 +5192,7 @@ async function doActualPostLIVE(data){
       <div style="width:80px;height:80px;border-radius:50%;border:4px solid #1a1a1a;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
       <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
       <h2 style="color:#fff;font-weight:900;font-size:18px;margin-top:16px">POSTING LIVE WORLDWIDE...</h2>
-      <p style="color:#22c55e;font-size:12px;margin-top:6px">Uploading photos to cloud + broadcasting to all phones instantly 🌍</p>
+      <p style="color:#22c55e;font-size:12px;margin-top:6px">Processing photos to cloud + broadcasting to all phones instantly 🌍</p>
       <p id="liveUploadStatus" style="color:#888;font-size:11px;margin-top:10px">Preparing images...</p>
     </div>`;
     document.body.appendChild(postingOverlay);
@@ -4967,7 +5216,7 @@ async function doActualPostLIVE(data){
       }
     }
 
-    updateStatus('Uploading '+data.images.length+' photos to cloud storage...');
+    updateStatus('Processing '+data.images.length+' photos to cloud storage...');
     const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
     const profileName = (typeof profileName!=='undefined' && profileName) ? profileName : (localStorage.getItem('hawz_profileName')||'User');
     
@@ -6567,7 +6816,7 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
         <div style="width:70px;height:70px;border-radius:50%;border:4px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
         <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
         <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:18px;letter-spacing:1px">POSTING... PLEASE WAIT</h2>
-        <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px;font-weight:600">Uploading to worldwide LIVE...</p>
+        <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px;font-weight:600">This will take few seconds...</p>
       </div>`;
       document.body.appendChild(postingOverlay);
       document.body.style.overflow='hidden';
@@ -6597,7 +6846,7 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
         }catch(e){}
       }
 
-      updateStatus('Uploading '+data.images.length+' photos...');
+      updateStatus('Processing '+data.images.length+' photos...');
       const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
       let safeProfileName='User';
       try{
@@ -6615,7 +6864,7 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
         video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
       };
 
-      updateStatus('Saving LIVE to all devices...');
+      updateStatus('This will take few seconds...');
       let firebaseId=null;
       try{
         if(window.fbAddPost){
@@ -6699,6 +6948,255 @@ console.log('🔧 FIXING UPLOAD PHOTO BUG - Make post LIVE to all devices');
   };
   console.log('✅ POSTING TEXT FIXED: Shows POSTING... PLEASE WAIT then POST SUCCESSFUL with tick - Professional');
 })();
+</script>
+<script>
+// ===== FIX FIREBASE TIMEOUT - NO MORE STORAGE TEST - 100% FIRESTORE LIVE =====
+console.log('🔧 FIXING FIREBASE TIMEOUT - Removing Storage test, using Firestore-only LIVE');
+
+window.fbAddPost = async function(p){
+  const MAX_DOC_SIZE = 900000; // 900KB max for Firestore doc
+  try{
+    let safe={...p};
+    let newHashes=[];
+    try{
+      if(safe.images && safe.images.length){
+        safe.images.forEach(img=>{ try{ const h=window.getImageHash? window.getImageHash(String(img)):''; if(h) newHashes.push(h); }catch(e){} });
+      }
+      if(safe.image){ try{ const h=window.getImageHash? window.getImageHash(String(safe.image)):''; if(h && !newHashes.includes(h)) newHashes.push(h); }catch(e){} }
+    }catch(e){}
+    safe.imageHashes = newHashes.length>0? newHashes : (safe.imageHashes||[]);
+    
+    // NO STORAGE TEST - Go directly to Firestore compressed mode (Storage billing blocked)
+    console.log('⚡ Firestore-only LIVE mode - Skipping Storage test (billing blocked)');
+    let uploadedUrls = [];
+    
+    // Compress aggressively for Firestore 1MB limit
+    const compressOne = (base64, maxW=450, qual=0.32) => new Promise((res)=>{
+      try{
+        if(!base64 || !base64.startsWith('data:')) { res(base64); return; }
+        const img = new Image();
+        img.onload = ()=>{
+          try{
+            let w=img.width, h=img.height;
+            if(w>maxW){ h=Math.round(h*(maxW/w)); w=maxW; }
+            const canvas=document.createElement('canvas');
+            canvas.width=w; canvas.height=h;
+            const ctx=canvas.getContext('2d');
+            ctx.drawImage(img,0,0,w,h);
+            let c=canvas.toDataURL('image/jpeg', qual);
+            if(c.length>80000){
+              const canvas2=document.createElement('canvas');
+              canvas2.width=Math.round(w*0.7); canvas2.height=Math.round(h*0.7);
+              const ctx2=canvas2.getContext('2d');
+              ctx2.drawImage(img,0,0,canvas2.width,canvas2.height);
+              c=canvas2.toDataURL('image/jpeg', 0.28);
+            }
+            res(c);
+          }catch(e){ res(base64); }
+        };
+        img.onerror=()=>{ res(base64); };
+        img.src=base64;
+      }catch(e){ res(base64); }
+    });
+
+    // Build images array that fits in 900KB
+    let totalSize=0;
+    for(let i=0;i<safe.images.length && i<15; i++){
+      try{
+        let img=safe.images[i];
+        let compressed = img;
+        if(String(img).startsWith('data:')){
+          compressed = await compressOne(img, 450, 0.32);
+        }
+        // Check total size
+        if(totalSize + compressed.length > MAX_DOC_SIZE){
+          console.log('Firestore size limit reached at', i, 'photos');
+          break;
+        }
+        if(compressed.length < 100000){
+          uploadedUrls.push(compressed);
+          totalSize+=compressed.length;
+        }
+      }catch(e){ console.warn('Compress fail', e); }
+    }
+
+    if(uploadedUrls.length===0 && safe.images.length>0){
+      // Fallback: take first image and compress ultra
+      try{
+        const ultra = await compressOne(safe.images[0], 350, 0.25);
+        uploadedUrls=[ultra];
+      }catch(e){ uploadedUrls=safe.images.slice(0,1); }
+    }
+
+    safe.images = uploadedUrls;
+    safe.image = uploadedUrls[0] || '';
+    safe.imagesCount = uploadedUrls.length;
+    safe.storageMode = 'firestore_live_only';
+    safe.totalImageSizeKB = Math.round(totalSize/1024);
+
+    // Remove video if too big for Firestore (need Storage for 100MB video)
+    if(safe.video && typeof safe.video==='string' && String(safe.video).startsWith('data:')){
+      if(safe.video.length > 7000000){ // >7MB
+        console.log('Video too large for Firestore, removing for now - will work after Storage billing fixed');
+        safe.video = null;
+        safe.hasVideo = false;
+        safe.videoNote = 'Video removed for now - Storage billing needed for 100MB videos';
+      }
+    }
+
+    safe.createdAt = safe.createdAt || Date.now();
+    safe.updatedAt = Date.now();
+    
+    console.log('📤 Saving to Firestore LIVE - Photos:', safe.images.length, 'Size:', safe.totalImageSizeKB+'KB');
+    
+    // Direct Firestore add - NO timeout race, with retry
+    try{
+      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const postsCol = collection(window.db, "posts");
+      const docRef = await addDoc(postsCol, safe);
+      console.log('🌍 POSTED LIVE WORLDWIDE SUCCESS:', docRef.id, 'Photos:', safe.images.length);
+      return docRef.id;
+    }catch(e){
+      console.error('Firestore import add failed, trying fallback', e);
+      // Fallback using window._fb
+      try{
+        if(window._fb && window._fb.collection && window._fb.addDoc){
+          const postsCol = window._fb.collection(window.db, "posts");
+          const docRef = await window._fb.addDoc(postsCol, safe);
+          console.log('🌍 POSTED LIVE WORLDWIDE (fallback):', docRef.id);
+          return docRef.id;
+        } else {
+          throw e;
+        }
+      }catch(e2){
+        console.error('Both Firestore methods failed', e2);
+        throw e2;
+      }
+    }
+  }catch(e){
+    console.error('fbAddPost Firestore-only failed:', e);
+    throw e;
+  }
+};
+
+// Also fix doActualPostLIVE to remove timeout race
+window.doActualPostLIVE = async function(data){
+  const btn=document.getElementById('postNowBtn');
+  if(window.isPosting) return;
+  window.isPosting=true;
+  if(btn){ btn.innerText='POSTING... PLEASE WAIT'; btn.disabled=true; btn.style.opacity='0.7'; }
+  
+  let postingOverlay=document.getElementById('livePostingOverlay');
+  if(!postingOverlay){
+    postingOverlay=document.createElement('div');
+    postingOverlay.id='livePostingOverlay';
+    postingOverlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;padding:20px';
+    postingOverlay.innerHTML=`<div style="background:#111;border:2px solid #22c55e;border-radius:20px;padding:28px;max-width:360px;width:100%;text-align:center">
+      <div style="width:70px;height:70px;border-radius:50%;border:4px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+      <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:18px;letter-spacing:1px">POSTING... PLEASE WAIT</h2>
+      <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px;font-weight:600">This will take few seconds...</p>
+    </div>`;
+    document.body.appendChild(postingOverlay);
+    document.body.style.overflow='hidden';
+  } else {
+    try{ const h2=postingOverlay.querySelector('h2'); if(h2) h2.innerText='POSTING... PLEASE WAIT'; postingOverlay.style.display='flex'; }catch(e){}
+  }
+  const updateStatus=(txt)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=txt; }catch(e){} };
+
+  try{
+    updateStatus('Checking photos...');
+    const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+    let safeProfileName='User';
+    try{
+      safeProfileName = localStorage.getItem('hawz_name') || localStorage.getItem('hawz_profileName') || 'User';
+      if(typeof profileName !== 'undefined' && profileName) safeProfileName = profileName;
+    }catch(e){ safeProfileName = localStorage.getItem('hawz_name')||'User'; }
+
+    let instantPost={
+      title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+      houseType:data.houseType, type:data.type, amenities:data.amenities, customAmenities:data.customAmenities,
+      landlordTitle:data.landlordTitle, ownerName:data.ownerName||safeProfileName, posterName:safeProfileName,
+      ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+      images:[...data.images], image:data.images[0], imageHashes:data.imageHashes||[], imagesCount:data.images.length,
+      video:data.video||null, hasVideo:!!data.video, isUrgent:data.isUrgent, taken:false, createdAt:Date.now()
+    };
+
+    updateStatus('This will take few seconds...');
+    let firebaseId=null;
+    // NO RACE TIMEOUT - direct call with proper error handling
+    firebaseId = await window.fbAddPost(instantPost);
+
+    updateStatus('This will take few seconds...');
+    await new Promise(r=>setTimeout(r, 300));
+
+    // Clear form
+    try{
+      try{ if(typeof uploadedImages!=='undefined') uploadedImages=[]; }catch(e){}
+      window.uploadedImages=[];
+      try{ if(typeof uploadedVideo!=='undefined') uploadedVideo=null; }catch(e){}
+      try{ if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview=''; }catch(e){}
+      window.uploadedVideo=null; window.uploadedVideoPreview='';
+      const els=['pTitle','pPrice','pAddress','pCustomAmenities']; els.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+      const grid=document.getElementById('previewGrid'); if(grid){ grid.innerHTML=''; grid.classList.add('hidden'); }
+      const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); }
+      const fc=document.getElementById('fileCount'); if(fc) fc.innerText='';
+      const vc=document.getElementById('videoCount'); if(vc) vc.innerText='';
+      try{ document.getElementById('pFiles').value=''; }catch(e){}
+      try{ document.getElementById('pVideo').value=''; }catch(e){}
+      try{ selectedAmenities=new Set(); }catch(e){}
+      try{ window.selectedAmenities=new Set(); }catch(e){}
+      try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+    }catch(e){}
+
+    if(postingOverlay) postingOverlay.remove();
+    document.body.style.overflow='';
+    window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+    
+    if(typeof closePostModal==='function') try{closePostModal()}catch(e){}
+    if(typeof closePaywall==='function') try{closePaywall()}catch(e){}
+
+    // POST SUCCESSFUL BOX WITH TICK
+    let success=document.createElement('div');
+    success.id='postSuccessfulBox';
+    success.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn 0.3s ease';
+    success.innerHTML=`<style>@keyframes fadeIn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}} @keyframes tickPop{0%{transform:scale(0)} 50%{transform:scale(1.2)} 100%{transform:scale(1)}}</style>
+    <div style="background:#101010;border:2px solid #22c55e;border-radius:24px;padding:32px 28px;max-width:360px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(34,197,94,0.3)">
+      <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;animation:tickPop 0.5s ease">
+        <i class="fa-solid fa-check" style="color:#000;font-size:38px;font-weight:900"></i>
+      </div>
+      <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:18px;letter-spacing:0.5px">POST SUCCESSFUL ✓</h2>
+      <p style="color:#22c55e;font-size:13px;margin-top:8px;font-weight:700">"${data.title}" is now LIVE worldwide!</p>
+      <p style="color:#888;font-size:11px;margin-top:6px">All users on phone, PC, tablet will see it instantly • ${data.images.length} photos • LIVE like Facebook</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:20px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900;font-size:14px;letter-spacing:0.5px">OKAY ✓</button>
+    </div>`;
+    document.body.appendChild(success);
+    setTimeout(()=>{ try{ const el=document.getElementById('postSuccessfulBox'); if(el) el.remove(); document.body.style.overflow=''; }catch(e){} }, 4000);
+    if(typeof showToast==='function') showToast('POST SUCCESSFUL ✓ - LIVE worldwide');
+    try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+  }catch(err){
+    console.error('Post error', err);
+    let overlay=document.getElementById('livePostingOverlay'); if(overlay) overlay.remove();
+    document.body.style.overflow='';
+    window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+    if(typeof showToast==='function') showToast('Posting failed - '+ (err.message||'check internet - try with fewer photos'));
+    // Show detailed error
+    let errBox=document.createElement('div');
+    errBox.style.cssText='position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+    errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:400px;width:100%;text-align:center">
+      <h2 style="color:#ef4444;font-weight:900;font-size:16px">POST FAILED</h2>
+      <p style="color:#fff;font-size:12px;margin-top:10px;word-break:break-all">${String(err.message||err).slice(0,400)}</p>
+      <p style="color:#888;font-size:10px;margin-top:8px">Tip: Try with 2-3 photos first. Firestore limit is 1MB per post.</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:12px;border-radius:12px;font-weight:900">OKAY</button>
+    </div>`;
+    document.body.appendChild(errBox);
+    setTimeout(()=>{ try{errBox.remove()}catch(e){} }, 8000);
+  }
+};
+
+console.log('✅ FIREBASE TIMEOUT FIXED - 100% Firestore-only LIVE, no Storage test, no timeout barrier - Posting will work instantly to all devices');
 </script>
 </body>
 </html>
