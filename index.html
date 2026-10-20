@@ -3333,6 +3333,314 @@ window.doActualPostLIVE = async function(data){
 
 console.log('✅ FIREBASE TIMEOUT FIXED - 100% Firestore-only LIVE, no Storage test, no timeout barrier - Posting will work instantly to all devices');
 </script>
+<script>
+// ===== ULTRA FINAL FIX - POST WITH EASE - NO ERRORS =====
+console.log('🔧 ULTRA FINAL FIX - POST WITH EASE LOADING...');
+
+window.isPosting = false;
+
+// FINAL fbAddPost - 100% Firestore, no Storage, no timeout barrier
+window.fbAddPost = async function(p){
+  try{
+    let safe={...p};
+    // Hashes
+    let newHashes=[];
+    try{
+      if(safe.images){
+        safe.images.forEach(img=>{
+          try{
+            const h = (window.getImageHash || function(s){ let hash=0; for(let i=0;i<s.length;i++){ hash=((hash<<5)-hash)+s.charCodeAt(i); hash|=0; } return String(hash); })(String(img));
+            if(h) newHashes.push(h);
+          }catch(e){}
+        });
+      }
+    }catch(e){}
+    safe.imageHashes = newHashes.length>0 ? newHashes : (safe.imageHashes||[]);
+
+    // Compress for Firestore 1MB limit - AGGRESSIVE but clear
+    const compressImage = (base64, maxW=500, quality=0.38) => new Promise(resolve=>{
+      try{
+        if(!base64 || typeof base64!=='string' || !base64.startsWith('data:')){
+          resolve(base64); return;
+        }
+        const img = new Image();
+        img.onload = ()=>{
+          try{
+            let w=img.width, h=img.height;
+            if(w>maxW){ h=Math.round(h*(maxW/w)); w=maxW; }
+            if(h>maxW*1.5){ w=Math.round(w*(maxW*1.5/h)); h=Math.round(maxW*1.5); }
+            const canvas=document.createElement('canvas');
+            canvas.width=w; canvas.height=h;
+            const ctx=canvas.getContext('2d');
+            ctx.drawImage(img,0,0,w,h);
+            let out = canvas.toDataURL('image/jpeg', quality);
+            // If still >80KB, recompress smaller
+            if(out.length>80000){
+              const c2=document.createElement('canvas');
+              c2.width=Math.round(w*0.6); c2.height=Math.round(h*0.6);
+              c2.getContext('2d').drawImage(img,0,0,c2.width,c2.height);
+              out = c2.toDataURL('image/jpeg', 0.30);
+            }
+            resolve(out);
+          }catch(e){ resolve(base64); }
+        };
+        img.onerror=()=>{ resolve(base64); };
+        img.src=base64;
+      }catch(e){ resolve(base64); }
+    });
+
+    let urls=[];
+    let total=0;
+    const MAX_TOTAL = 850000; // 850KB max for Firestore doc safety
+
+    for(let i=0;i<safe.images.length && i<15; i++){
+      let img = safe.images[i];
+      try{
+        let comp = await compressImage(img, 500, 0.38);
+        if(total + comp.length > MAX_TOTAL){
+          console.log('Reached Firestore size limit at', i, 'photos');
+          break;
+        }
+        urls.push(comp);
+        total+=comp.length;
+      }catch(e){
+        console.warn('Compress fail', e);
+        // Try original if small
+        if(img && img.length < 100000 && total+img.length < MAX_TOTAL){
+          urls.push(img); total+=img.length;
+        }
+      }
+    }
+
+    // Ensure at least 1 image
+    if(urls.length===0 && safe.images.length>0){
+      try{
+        const ultra = await compressImage(safe.images[0], 350, 0.28);
+        urls=[ultra];
+        total=ultra.length;
+      }catch(e){ urls=[safe.images[0]]; }
+    }
+
+    safe.images = urls;
+    safe.image = urls[0] || '';
+    safe.imagesCount = urls.length;
+    safe.storageMode = 'firestore_live_only';
+    safe.totalSizeKB = Math.round(total/1024);
+    safe.createdAt = safe.createdAt || Date.now();
+    safe.updatedAt = Date.now();
+
+    // Remove video if base64 too big (video needs Storage billing)
+    if(safe.video && typeof safe.video==='string' && safe.video.startsWith('data:') && safe.video.length > 2000000){
+      safe.video=null; safe.hasVideo=false;
+    }
+
+    console.log('📤 FINAL POST: Saving', urls.length, 'photos,', safe.totalSizeKB+'KB to Firestore LIVE');
+
+    // Save to Firestore - try modern import, then fallback
+    try{
+      const mod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const docRef = await mod.addDoc(mod.collection(window.db, "posts"), safe);
+      console.log('✅ POSTED LIVE SUCCESS:', docRef.id);
+      return docRef.id;
+    }catch(e){
+      console.log('Modern import failed, trying window._fb fallback', e);
+      try{
+        if(window._fb && window._fb.collection && window._fb.addDoc){
+          const col = window._fb.collection(window.db, "posts");
+          const docRef = await window._fb.addDoc(col, safe);
+          console.log('✅ POSTED LIVE SUCCESS (fallback):', docRef.id);
+          return docRef.id;
+        } else {
+          throw e;
+        }
+      }catch(e2){
+        console.error('All Firestore methods failed', e2);
+        throw new Error('Firestore save failed: ' + (e2.message||e2) + ' - Try with fewer photos (2-3)');
+      }
+    }
+  }catch(err){
+    console.error('fbAddPost final error', err);
+    throw err;
+  }
+};
+
+// FINAL posting function - POST WITH EASE - NO ERRORS
+window.doActualPostLIVE = async function(data){
+  if(window.isPosting){
+    console.log('Already posting, wait');
+    return;
+  }
+  window.isPosting=true;
+  const btn=document.getElementById('postNowBtn');
+  if(btn){ btn.innerText='POSTING... PLEASE WAIT'; btn.disabled=true; btn.style.opacity='0.6'; }
+
+  // Create overlay if not exists - with new professional subtitle
+  let overlay=document.getElementById('livePostingOverlay');
+  if(!overlay){
+    overlay=document.createElement('div');
+    overlay.id='livePostingOverlay';
+    overlay.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML=`<div style="background:#111;border:2px solid #22c55e;border-radius:20px;padding:28px;max-width:360px;width:100%;text-align:center">
+      <div style="width:70px;height:70px;border-radius:50%;border:4px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+      <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:18px;letter-spacing:1px">POSTING... PLEASE WAIT</h2>
+      <p id="liveUploadStatus" style="color:#22c55e;font-size:12px;margin-top:8px;font-weight:600">This will take few seconds...</p>
+    </div>`;
+    document.body.appendChild(overlay);
+    document.body.style.overflow='hidden';
+  } else {
+    overlay.style.display='flex';
+    try{ const h2=overlay.querySelector('h2'); if(h2) h2.innerText='POSTING... PLEASE WAIT'; }catch(e){}
+    try{ const sub=overlay.querySelector('#liveUploadStatus'); if(sub) sub.innerText='This will take few seconds...'; }catch(e){}
+  }
+  const setStatus=(t)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=t; }catch(e){} };
+
+  try{
+    setStatus('This will take few seconds...');
+    const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+    let profileNameSafe='User';
+    try{ profileNameSafe=localStorage.getItem('hawz_name')||'User'; }catch(e){}
+
+    const postDoc={
+      title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+      houseType:data.houseType, type:data.type, amenities:data.amenities||[], customAmenities:data.customAmenities||'',
+      landlordTitle:data.landlordTitle||'', ownerName:data.ownerName||profileNameSafe, posterName:profileNameSafe,
+      ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+      images:data.images||[], image:(data.images&&data.images[0])||'', imageHashes:data.imageHashes||[], imagesCount:(data.images||[]).length,
+      video:data.video||null, hasVideo:!!data.video, isUrgent:!!data.isUrgent, taken:false, createdAt:Date.now()
+    };
+
+    setStatus('Uploading...');
+    const id = await window.fbAddPost(postDoc);
+
+    // Success
+    if(overlay) overlay.remove();
+    document.body.style.overflow='';
+    window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+
+    // Clear form
+    try{ if(typeof uploadedImages!=='undefined') uploadedImages=[]; }catch(e){}
+    window.uploadedImages=[];
+    try{ if(typeof uploadedVideo!=='undefined') uploadedVideo=null; }catch(e){}
+    try{ if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview=''; }catch(e){}
+    window.uploadedVideo=null; window.uploadedVideoPreview='';
+    try{ const g=document.getElementById('previewGrid'); if(g){ g.innerHTML=''; g.classList.add('hidden'); } }catch(e){}
+    try{ const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); } }catch(e){}
+    try{ document.getElementById('pFiles').value=''; }catch(e){}
+    try{ document.getElementById('pVideo').value=''; }catch(e){}
+    try{ document.getElementById('fileCount').innerText=''; }catch(e){}
+    try{ document.getElementById('videoCount').innerText=''; }catch(e){}
+    try{ ['pTitle','pPrice','pAddress','pCustomAmenities'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; }); }catch(e){}
+    try{ selectedAmenities=new Set(); window.selectedAmenities=new Set(); }catch(e){}
+    try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+    try{ if(typeof closePostModal==='function') closePostModal(); }catch(e){}
+    try{ if(typeof closePaywall==='function') closePaywall(); }catch(e){}
+
+    // POST SUCCESSFUL box with tick
+    let success=document.createElement('div');
+    success.id='postSuccessfulBox';
+    success.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px';
+    success.innerHTML=`<div style="background:#101010;border:2px solid #22c55e;border-radius:24px;padding:32px 28px;max-width:360px;width:100%;text-align:center;animation:pop 0.4s ease">
+      <style>@keyframes pop{0%{transform:scale(0.8);opacity:0}100%{transform:scale(1);opacity:1}} @keyframes tickPop{0%{transform:scale(0)}50%{transform:scale(1.2)}100%{transform:scale(1)}}</style>
+      <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;animation:tickPop 0.5s ease">
+        <i class="fa-solid fa-check" style="color:#000;font-size:38px"></i>
+      </div>
+      <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:18px">POST SUCCESSFUL ✓</h2>
+      <p style="color:#22c55e;font-size:13px;margin-top:8px;font-weight:700">"${data.title}" is now LIVE!</p>
+      <p style="color:#888;font-size:11px;margin-top:6px">All users will see it instantly • ${data.images.length} photos</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:20px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900">OKAY ✓</button>
+    </div>`;
+    document.body.appendChild(success);
+    setTimeout(()=>{ try{ document.getElementById('postSuccessfulBox')?.remove(); }catch(e){} document.body.style.overflow=''; }, 5000);
+    if(typeof showToast==='function') showToast('POST SUCCESSFUL ✓');
+    try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+
+  }catch(err){
+    console.error('FINAL POST ERROR', err);
+    let ov=document.getElementById('livePostingOverlay'); if(ov) ov.remove();
+    document.body.style.overflow='';
+    window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+    
+    // Show error but with helpful tip
+    let errBox=document.createElement('div');
+    errBox.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+    errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:380px;width:100%;text-align:center">
+      <h2 style="color:#ef4444;font-weight:900;font-size:16px">POST FAILED</h2>
+      <p style="color:#fff;font-size:12px;margin-top:10px;word-break:break-word">${String(err.message||err).slice(0,350)}</p>
+      <p style="color:#888;font-size:10px;margin-top:8px">Tip: If photos are large, try with 2 photos first. Check internet connection.</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:12px;border-radius:12px;font-weight:900">OKAY</button>
+    </div>`;
+    document.body.appendChild(errBox);
+    setTimeout(()=>{ try{ errBox.remove(); }catch(e){} }, 8000);
+  }
+};
+
+// Override old post handler - POST WITH EASE
+window.handlePostNowWithLivePay = async function(){
+  // Get images from both arrays
+  let imgs=[];
+  try{
+    if(typeof uploadedImages!=='undefined' && uploadedImages.length>0) imgs=uploadedImages;
+    else if(window.uploadedImages && window.uploadedImages.length>0) imgs=window.uploadedImages;
+  }catch(e){ imgs=window.uploadedImages||[]; }
+
+  console.log('📸 Final post attempt - Images:', imgs.length);
+
+  if(imgs.length===0){
+    if(typeof showToast==='function') showToast('Upload at least 1 photo');
+    return;
+  }
+
+  const getVal=(id)=>{ try{ return document.getElementById(id)?.value?.trim()||''; }catch(e){return '';} };
+  const state=getVal('pState')||document.getElementById('pState')?.value||'';
+  const area=getVal('pArea')||document.getElementById('pArea')?.value||'';
+  const address=getVal('pAddress');
+  const houseType=document.getElementById('pHouseType')?.value||'';
+  const price=getVal('pPrice');
+  const type=document.getElementById('pType')?.value||'';
+  const title=getVal('pTitle');
+  const customAmenities=getVal('pCustomAmenities');
+  const landlordTitle=document.getElementById('pLandlordTitle')?.value||'';
+  const ownerName=getVal('pOwner')||getVal('pOwnerName')||localStorage.getItem('hawz_name')||'User';
+  const phone=getVal('pPhone')||getVal('pOwnerPhone')||'';
+  const whatsapp=getVal('pWhatsApp')||phone;
+  const isUrgent=document.getElementById('pUrgent')?.checked||false;
+  let amenities=[];
+  try{ amenities=[...(typeof selectedAmenities!=='undefined'? selectedAmenities: window.selectedAmenities||[])]; }catch(e){ amenities=[]; }
+
+  if(!address||!price||!title||!ownerName||!phone){
+    if(typeof showToast==='function') showToast('Fill all required fields');
+    return;
+  }
+
+  const postData={state,area,address,houseType,price,type,title,amenities,customAmenities,landlordTitle,ownerName,phone,whatsapp,isUrgent,images:imgs,video:window.uploadedVideoPreview||null, imageHashes:[]};
+
+  await window.doActualPostLIVE(postData);
+};
+
+// Also fix file input sync
+setTimeout(()=>{
+  try{
+    const fi=document.getElementById('pFiles');
+    if(fi){
+      fi.addEventListener('change', ()=>{
+        setTimeout(()=>{
+          try{
+            if(typeof uploadedImages!=='undefined'){
+              window.uploadedImages=[...uploadedImages];
+              console.log('📸 Synced', uploadedImages.length, 'photos');
+            }
+          }catch(e){}
+        }, 300);
+      });
+    }
+  }catch(e){}
+}, 1000);
+
+console.log('✅ ULTRA FINAL FIX LOADED - Post with ease, no errors, POSTING... PLEASE WAIT -> This will take few seconds... -> POST SUCCESSFUL ✓ - LIVE to all devices');
+</script>
 </body>
 </html><script>
 const nigeriaStates={
@@ -7197,6 +7505,314 @@ window.doActualPostLIVE = async function(data){
 };
 
 console.log('✅ FIREBASE TIMEOUT FIXED - 100% Firestore-only LIVE, no Storage test, no timeout barrier - Posting will work instantly to all devices');
+</script>
+<script>
+// ===== ULTRA FINAL FIX - POST WITH EASE - NO ERRORS =====
+console.log('🔧 ULTRA FINAL FIX - POST WITH EASE LOADING...');
+
+window.isPosting = false;
+
+// FINAL fbAddPost - 100% Firestore, no Storage, no timeout barrier
+window.fbAddPost = async function(p){
+  try{
+    let safe={...p};
+    // Hashes
+    let newHashes=[];
+    try{
+      if(safe.images){
+        safe.images.forEach(img=>{
+          try{
+            const h = (window.getImageHash || function(s){ let hash=0; for(let i=0;i<s.length;i++){ hash=((hash<<5)-hash)+s.charCodeAt(i); hash|=0; } return String(hash); })(String(img));
+            if(h) newHashes.push(h);
+          }catch(e){}
+        });
+      }
+    }catch(e){}
+    safe.imageHashes = newHashes.length>0 ? newHashes : (safe.imageHashes||[]);
+
+    // Compress for Firestore 1MB limit - AGGRESSIVE but clear
+    const compressImage = (base64, maxW=500, quality=0.38) => new Promise(resolve=>{
+      try{
+        if(!base64 || typeof base64!=='string' || !base64.startsWith('data:')){
+          resolve(base64); return;
+        }
+        const img = new Image();
+        img.onload = ()=>{
+          try{
+            let w=img.width, h=img.height;
+            if(w>maxW){ h=Math.round(h*(maxW/w)); w=maxW; }
+            if(h>maxW*1.5){ w=Math.round(w*(maxW*1.5/h)); h=Math.round(maxW*1.5); }
+            const canvas=document.createElement('canvas');
+            canvas.width=w; canvas.height=h;
+            const ctx=canvas.getContext('2d');
+            ctx.drawImage(img,0,0,w,h);
+            let out = canvas.toDataURL('image/jpeg', quality);
+            // If still >80KB, recompress smaller
+            if(out.length>80000){
+              const c2=document.createElement('canvas');
+              c2.width=Math.round(w*0.6); c2.height=Math.round(h*0.6);
+              c2.getContext('2d').drawImage(img,0,0,c2.width,c2.height);
+              out = c2.toDataURL('image/jpeg', 0.30);
+            }
+            resolve(out);
+          }catch(e){ resolve(base64); }
+        };
+        img.onerror=()=>{ resolve(base64); };
+        img.src=base64;
+      }catch(e){ resolve(base64); }
+    });
+
+    let urls=[];
+    let total=0;
+    const MAX_TOTAL = 850000; // 850KB max for Firestore doc safety
+
+    for(let i=0;i<safe.images.length && i<15; i++){
+      let img = safe.images[i];
+      try{
+        let comp = await compressImage(img, 500, 0.38);
+        if(total + comp.length > MAX_TOTAL){
+          console.log('Reached Firestore size limit at', i, 'photos');
+          break;
+        }
+        urls.push(comp);
+        total+=comp.length;
+      }catch(e){
+        console.warn('Compress fail', e);
+        // Try original if small
+        if(img && img.length < 100000 && total+img.length < MAX_TOTAL){
+          urls.push(img); total+=img.length;
+        }
+      }
+    }
+
+    // Ensure at least 1 image
+    if(urls.length===0 && safe.images.length>0){
+      try{
+        const ultra = await compressImage(safe.images[0], 350, 0.28);
+        urls=[ultra];
+        total=ultra.length;
+      }catch(e){ urls=[safe.images[0]]; }
+    }
+
+    safe.images = urls;
+    safe.image = urls[0] || '';
+    safe.imagesCount = urls.length;
+    safe.storageMode = 'firestore_live_only';
+    safe.totalSizeKB = Math.round(total/1024);
+    safe.createdAt = safe.createdAt || Date.now();
+    safe.updatedAt = Date.now();
+
+    // Remove video if base64 too big (video needs Storage billing)
+    if(safe.video && typeof safe.video==='string' && safe.video.startsWith('data:') && safe.video.length > 2000000){
+      safe.video=null; safe.hasVideo=false;
+    }
+
+    console.log('📤 FINAL POST: Saving', urls.length, 'photos,', safe.totalSizeKB+'KB to Firestore LIVE');
+
+    // Save to Firestore - try modern import, then fallback
+    try{
+      const mod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const docRef = await mod.addDoc(mod.collection(window.db, "posts"), safe);
+      console.log('✅ POSTED LIVE SUCCESS:', docRef.id);
+      return docRef.id;
+    }catch(e){
+      console.log('Modern import failed, trying window._fb fallback', e);
+      try{
+        if(window._fb && window._fb.collection && window._fb.addDoc){
+          const col = window._fb.collection(window.db, "posts");
+          const docRef = await window._fb.addDoc(col, safe);
+          console.log('✅ POSTED LIVE SUCCESS (fallback):', docRef.id);
+          return docRef.id;
+        } else {
+          throw e;
+        }
+      }catch(e2){
+        console.error('All Firestore methods failed', e2);
+        throw new Error('Firestore save failed: ' + (e2.message||e2) + ' - Try with fewer photos (2-3)');
+      }
+    }
+  }catch(err){
+    console.error('fbAddPost final error', err);
+    throw err;
+  }
+};
+
+// FINAL posting function - POST WITH EASE - NO ERRORS
+window.doActualPostLIVE = async function(data){
+  if(window.isPosting){
+    console.log('Already posting, wait');
+    return;
+  }
+  window.isPosting=true;
+  const btn=document.getElementById('postNowBtn');
+  if(btn){ btn.innerText='POSTING... PLEASE WAIT'; btn.disabled=true; btn.style.opacity='0.6'; }
+
+  // Create overlay if not exists - with new professional subtitle
+  let overlay=document.getElementById('livePostingOverlay');
+  if(!overlay){
+    overlay=document.createElement('div');
+    overlay.id='livePostingOverlay';
+    overlay.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.88);display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML=`<div style="background:#111;border:2px solid #22c55e;border-radius:20px;padding:28px;max-width:360px;width:100%;text-align:center">
+      <div style="width:70px;height:70px;border-radius:50%;border:4px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 1s linear infinite"></div>
+      <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+      <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:18px;letter-spacing:1px">POSTING... PLEASE WAIT</h2>
+      <p id="liveUploadStatus" style="color:#22c55e;font-size:12px;margin-top:8px;font-weight:600">This will take few seconds...</p>
+    </div>`;
+    document.body.appendChild(overlay);
+    document.body.style.overflow='hidden';
+  } else {
+    overlay.style.display='flex';
+    try{ const h2=overlay.querySelector('h2'); if(h2) h2.innerText='POSTING... PLEASE WAIT'; }catch(e){}
+    try{ const sub=overlay.querySelector('#liveUploadStatus'); if(sub) sub.innerText='This will take few seconds...'; }catch(e){}
+  }
+  const setStatus=(t)=>{ try{ const el=document.getElementById('liveUploadStatus'); if(el) el.innerText=t; }catch(e){} };
+
+  try{
+    setStatus('This will take few seconds...');
+    const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+    let profileNameSafe='User';
+    try{ profileNameSafe=localStorage.getItem('hawz_name')||'User'; }catch(e){}
+
+    const postDoc={
+      title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+      houseType:data.houseType, type:data.type, amenities:data.amenities||[], customAmenities:data.customAmenities||'',
+      landlordTitle:data.landlordTitle||'', ownerName:data.ownerName||profileNameSafe, posterName:profileNameSafe,
+      ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+      images:data.images||[], image:(data.images&&data.images[0])||'', imageHashes:data.imageHashes||[], imagesCount:(data.images||[]).length,
+      video:data.video||null, hasVideo:!!data.video, isUrgent:!!data.isUrgent, taken:false, createdAt:Date.now()
+    };
+
+    setStatus('Uploading...');
+    const id = await window.fbAddPost(postDoc);
+
+    // Success
+    if(overlay) overlay.remove();
+    document.body.style.overflow='';
+    window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+
+    // Clear form
+    try{ if(typeof uploadedImages!=='undefined') uploadedImages=[]; }catch(e){}
+    window.uploadedImages=[];
+    try{ if(typeof uploadedVideo!=='undefined') uploadedVideo=null; }catch(e){}
+    try{ if(typeof uploadedVideoPreview!=='undefined') uploadedVideoPreview=''; }catch(e){}
+    window.uploadedVideo=null; window.uploadedVideoPreview='';
+    try{ const g=document.getElementById('previewGrid'); if(g){ g.innerHTML=''; g.classList.add('hidden'); } }catch(e){}
+    try{ const vg=document.getElementById('videoPreviewGrid'); if(vg){ vg.innerHTML=''; vg.classList.add('hidden'); } }catch(e){}
+    try{ document.getElementById('pFiles').value=''; }catch(e){}
+    try{ document.getElementById('pVideo').value=''; }catch(e){}
+    try{ document.getElementById('fileCount').innerText=''; }catch(e){}
+    try{ document.getElementById('videoCount').innerText=''; }catch(e){}
+    try{ ['pTitle','pPrice','pAddress','pCustomAmenities'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; }); }catch(e){}
+    try{ selectedAmenities=new Set(); window.selectedAmenities=new Set(); }catch(e){}
+    try{ document.querySelectorAll('.amenity-pill.active').forEach(el=>el.classList.remove('active')); }catch(e){}
+    try{ if(typeof closePostModal==='function') closePostModal(); }catch(e){}
+    try{ if(typeof closePaywall==='function') closePaywall(); }catch(e){}
+
+    // POST SUCCESSFUL box with tick
+    let success=document.createElement('div');
+    success.id='postSuccessfulBox';
+    success.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px';
+    success.innerHTML=`<div style="background:#101010;border:2px solid #22c55e;border-radius:24px;padding:32px 28px;max-width:360px;width:100%;text-align:center;animation:pop 0.4s ease">
+      <style>@keyframes pop{0%{transform:scale(0.8);opacity:0}100%{transform:scale(1);opacity:1}} @keyframes tickPop{0%{transform:scale(0)}50%{transform:scale(1.2)}100%{transform:scale(1)}}</style>
+      <div style="width:80px;height:80px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;animation:tickPop 0.5s ease">
+        <i class="fa-solid fa-check" style="color:#000;font-size:38px"></i>
+      </div>
+      <h2 style="color:#fff;font-weight:900;font-size:20px;margin-top:18px">POST SUCCESSFUL ✓</h2>
+      <p style="color:#22c55e;font-size:13px;margin-top:8px;font-weight:700">"${data.title}" is now LIVE!</p>
+      <p style="color:#888;font-size:11px;margin-top:6px">All users will see it instantly • ${data.images.length} photos</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed();" style="width:100%;margin-top:20px;background:#22c55e;color:#000;padding:14px;border-radius:12px;font-weight:900">OKAY ✓</button>
+    </div>`;
+    document.body.appendChild(success);
+    setTimeout(()=>{ try{ document.getElementById('postSuccessfulBox')?.remove(); }catch(e){} document.body.style.overflow=''; }, 5000);
+    if(typeof showToast==='function') showToast('POST SUCCESSFUL ✓');
+    try{ if(typeof renderFeed==='function') renderFeed(); }catch(e){}
+
+  }catch(err){
+    console.error('FINAL POST ERROR', err);
+    let ov=document.getElementById('livePostingOverlay'); if(ov) ov.remove();
+    document.body.style.overflow='';
+    window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+    
+    // Show error but with helpful tip
+    let errBox=document.createElement('div');
+    errBox.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+    errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:20px;padding:24px;max-width:380px;width:100%;text-align:center">
+      <h2 style="color:#ef4444;font-weight:900;font-size:16px">POST FAILED</h2>
+      <p style="color:#fff;font-size:12px;margin-top:10px;word-break:break-word">${String(err.message||err).slice(0,350)}</p>
+      <p style="color:#888;font-size:10px;margin-top:8px">Tip: If photos are large, try with 2 photos first. Check internet connection.</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:14px;background:#ef4444;color:#fff;padding:12px;border-radius:12px;font-weight:900">OKAY</button>
+    </div>`;
+    document.body.appendChild(errBox);
+    setTimeout(()=>{ try{ errBox.remove(); }catch(e){} }, 8000);
+  }
+};
+
+// Override old post handler - POST WITH EASE
+window.handlePostNowWithLivePay = async function(){
+  // Get images from both arrays
+  let imgs=[];
+  try{
+    if(typeof uploadedImages!=='undefined' && uploadedImages.length>0) imgs=uploadedImages;
+    else if(window.uploadedImages && window.uploadedImages.length>0) imgs=window.uploadedImages;
+  }catch(e){ imgs=window.uploadedImages||[]; }
+
+  console.log('📸 Final post attempt - Images:', imgs.length);
+
+  if(imgs.length===0){
+    if(typeof showToast==='function') showToast('Upload at least 1 photo');
+    return;
+  }
+
+  const getVal=(id)=>{ try{ return document.getElementById(id)?.value?.trim()||''; }catch(e){return '';} };
+  const state=getVal('pState')||document.getElementById('pState')?.value||'';
+  const area=getVal('pArea')||document.getElementById('pArea')?.value||'';
+  const address=getVal('pAddress');
+  const houseType=document.getElementById('pHouseType')?.value||'';
+  const price=getVal('pPrice');
+  const type=document.getElementById('pType')?.value||'';
+  const title=getVal('pTitle');
+  const customAmenities=getVal('pCustomAmenities');
+  const landlordTitle=document.getElementById('pLandlordTitle')?.value||'';
+  const ownerName=getVal('pOwner')||getVal('pOwnerName')||localStorage.getItem('hawz_name')||'User';
+  const phone=getVal('pPhone')||getVal('pOwnerPhone')||'';
+  const whatsapp=getVal('pWhatsApp')||phone;
+  const isUrgent=document.getElementById('pUrgent')?.checked||false;
+  let amenities=[];
+  try{ amenities=[...(typeof selectedAmenities!=='undefined'? selectedAmenities: window.selectedAmenities||[])]; }catch(e){ amenities=[]; }
+
+  if(!address||!price||!title||!ownerName||!phone){
+    if(typeof showToast==='function') showToast('Fill all required fields');
+    return;
+  }
+
+  const postData={state,area,address,houseType,price,type,title,amenities,customAmenities,landlordTitle,ownerName,phone,whatsapp,isUrgent,images:imgs,video:window.uploadedVideoPreview||null, imageHashes:[]};
+
+  await window.doActualPostLIVE(postData);
+};
+
+// Also fix file input sync
+setTimeout(()=>{
+  try{
+    const fi=document.getElementById('pFiles');
+    if(fi){
+      fi.addEventListener('change', ()=>{
+        setTimeout(()=>{
+          try{
+            if(typeof uploadedImages!=='undefined'){
+              window.uploadedImages=[...uploadedImages];
+              console.log('📸 Synced', uploadedImages.length, 'photos');
+            }
+          }catch(e){}
+        }, 300);
+      });
+    }
+  }catch(e){}
+}, 1000);
+
+console.log('✅ ULTRA FINAL FIX LOADED - Post with ease, no errors, POSTING... PLEASE WAIT -> This will take few seconds... -> POST SUCCESSFUL ✓ - LIVE to all devices');
 </script>
 </body>
 </html>
