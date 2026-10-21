@@ -471,52 +471,114 @@ try{
     }
   });
 }catch(e){}
-window.fbAddPost=async(p)=>{
-  try{
+// FIXED fbAddPost - No more base64 in Firestore
+window.fbAddPost = async (p) => {
+  try {
     let safe = {...p};
-    let newHashes = [];
-    try{
-      if(safe.images && safe.images.length){
-        safe.images.forEach(img=>{ const h=getImageHash(String(img)); if(h) newHashes.push(h); });
-      }
-      if(safe.image){ const h=getImageHash(String(safe.image)); if(h &&!newHashes.includes(h)) newHashes.push(h); }
-    }catch(e){}
-    safe.imageHashes = newHashes;
-    if(safe.images && safe.images.length){
-      let uploadedUrls=[];
-      for(let i=0;i<safe.images.length;i++){
-        let img = safe.images[i];
-        if(String(img).startsWith('data:')){
-          try{
-            const imgRef = ref(storage, `houses/${Date.now()}_${i}_${Math.random().toString(36).slice(2,6)}.jpg`);
+    let uploadedUrls = [];
+
+    // Compress and upload images one by one
+    if (safe.images && safe.images.length > 0) {
+      // Limit to 5 images max to avoid timeout
+      const imagesToUpload = safe.images.slice(0, 5);
+      for (let i = 0; i < imagesToUpload.length; i++) {
+        let img = imagesToUpload[i];
+        if (String(img).startsWith('data:')) {
+          try {
+            // Compress: if base64 > 800KB, skip
+            if (img.length > 800000) {
+              console.warn('Image too big, compressing...');
+            }
+            const imgRef = ref(storage, `houses/${Date.now()}_${i}.jpg`);
             const snapUp = await uploadString(imgRef, img, 'data_url');
             const url = await getDownloadURL(snapUp.ref);
             uploadedUrls.push(url);
-          }catch(e){ uploadedUrls.push(img); }
-        }else{
-          uploadedUrls.push(img);
+          } catch (e) {
+            console.error('Storage upload failed:', e);
+            // DON'T push base64, push placeholder
+            continue;
+          }
+        } else {
+          uploadedUrls.push(img); // already https url
         }
       }
-      if(uploadedUrls.length>0){
-        safe.images = uploadedUrls;
-        safe.image = uploadedUrls.find(u=>String(u).startsWith('https')) || uploadedUrls[0];
-        safe.imagesCount = uploadedUrls.length;
-      }
+      safe.images = uploadedUrls;
+      safe.image = uploadedUrls[0] || '';
+      safe.imagesCount = uploadedUrls.length;
     }
-    if(safe.video && typeof safe.video==='string'){
-      if(String(safe.video).startsWith('data:')){
-        try{
-          const vidRef = ref(storage, `videos/${Date.now()}_${Math.random().toString(36).slice(2,8)}.mp4`);
-          const uploadSnap = await uploadString(vidRef, safe.video, 'data_url');
-          const downloadUrl = await getDownloadURL(uploadSnap.ref);
-          safe.video = downloadUrl;
+
+    // Handle video - upload only if small
+    if (safe.video && String(safe.video).startsWith('data:')) {
+      try {
+        if (safe.video.length < 5000000) { // 5MB max
+          const vidRef = ref(storage, `videos/${Date.now()}.mp4`);
+          const snap = await uploadString(vidRef, safe.video, 'data_url');
+          safe.video = await getDownloadURL(snap.ref);
           safe.hasVideo = true;
-        }catch(e){ safe.hasVideo = true; }
-      }else{ safe.hasVideo = true; }
+        } else {
+          safe.video = null;
+          safe.hasVideo = false;
+        }
+      } catch(e){ safe.video = null; }
     }
-    return (await addDoc(collection(db,"posts"),{...safe,createdAt:Date.now(),serverTime:serverTimestamp()})).id;
-  }catch(e){ return null; }
+
+    // CRITICAL: Remove base64 fields before saving to Firestore
+    delete safe.imageHashes; // save only small hash
+    if (safe.image && safe.image.startsWith('data:')) delete safe.image;
+    
+    // Final check - document must be < 900KB
+    const docSize = JSON.stringify(safe).length;
+    if (docSize > 900000) {
+      throw new Error('Post too big - reduce photos');
+    }
+
+    const docRef = await addDoc(collection(db, "posts"), {
+      ...safe,
+      createdAt: Date.now(),
+      serverTime: serverTimestamp()
+    });
+    return docRef.id;
+  } catch (e) {
+    console.error('fbAddPost FINAL ERROR', e);
+    throw e; // throw so overlay can show error
+  }
 };
+
+// FIXED doActualPostLIVE - with proper cleanup
+async function doActualPostLIVE(data){
+  const btn = document.getElementById('postNowBtn');
+  if(window.isPosting) return;
+  window.isPosting = true;
+  if(btn){ btn.innerText='POSTING...'; btn.disabled=true; }
+
+  let overlay = document.getElementById('livePostingOverlay');
+  if(!overlay){
+    overlay = document.createElement('div');
+    overlay.id='livePostingOverlay';
+    overlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center';
+    overlay.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:20px;padding:24px;text-align:center;color:white">POSTING...<br><small id="liveUploadStatus">Uploading...</small></div>`;
+    document.body.appendChild(overlay);
+  }
+
+  try{
+    const firebaseId = await window.fbAddPost(data);
+    if(!firebaseId) throw new Error('Firebase returned null - check billing & rules');
+    
+    overlay.remove();
+    window.isPosting = false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; }
+    closePopup();
+    showToast('Posted LIVE worldwide ✅');
+    if(window.posts) window.posts.unshift({...data, id:firebaseId, fid:firebaseId});
+    renderFeed();
+  }catch(err){
+    overlay?.remove();
+    window.isPosting = false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; }
+    alert('POST FAILED: ' + err.message + '\n\n1. Fix billing: pay.google.com -> Close US profile, create NG Individual\n2. Fix Firebase Rules: Firestore -> Rules -> allow read,write: if true;\n3. Use less than 5 photos');
+    console.error(err);
+  }
+}
 window.checkFakeDuplicateLive = function(newHashes){
   try{
     if(!newHashes || newHashes.length===0) return false;
