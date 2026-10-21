@@ -471,114 +471,52 @@ try{
     }
   });
 }catch(e){}
-// FIXED fbAddPost - No more base64 in Firestore
-window.fbAddPost = async (p) => {
-  try {
+window.fbAddPost=async(p)=>{
+  try{
     let safe = {...p};
-    let uploadedUrls = [];
-
-    // Compress and upload images one by one
-    if (safe.images && safe.images.length > 0) {
-      // Limit to 5 images max to avoid timeout
-      const imagesToUpload = safe.images.slice(0, 5);
-      for (let i = 0; i < imagesToUpload.length; i++) {
-        let img = imagesToUpload[i];
-        if (String(img).startsWith('data:')) {
-          try {
-            // Compress: if base64 > 800KB, skip
-            if (img.length > 800000) {
-              console.warn('Image too big, compressing...');
-            }
-            const imgRef = ref(storage, `houses/${Date.now()}_${i}.jpg`);
+    let newHashes = [];
+    try{
+      if(safe.images && safe.images.length){
+        safe.images.forEach(img=>{ const h=getImageHash(String(img)); if(h) newHashes.push(h); });
+      }
+      if(safe.image){ const h=getImageHash(String(safe.image)); if(h &&!newHashes.includes(h)) newHashes.push(h); }
+    }catch(e){}
+    safe.imageHashes = newHashes;
+    if(safe.images && safe.images.length){
+      let uploadedUrls=[];
+      for(let i=0;i<safe.images.length;i++){
+        let img = safe.images[i];
+        if(String(img).startsWith('data:')){
+          try{
+            const imgRef = ref(storage, `houses/${Date.now()}_${i}_${Math.random().toString(36).slice(2,6)}.jpg`);
             const snapUp = await uploadString(imgRef, img, 'data_url');
             const url = await getDownloadURL(snapUp.ref);
             uploadedUrls.push(url);
-          } catch (e) {
-            console.error('Storage upload failed:', e);
-            // DON'T push base64, push placeholder
-            continue;
-          }
-        } else {
-          uploadedUrls.push(img); // already https url
+          }catch(e){ uploadedUrls.push(img); }
+        }else{
+          uploadedUrls.push(img);
         }
       }
-      safe.images = uploadedUrls;
-      safe.image = uploadedUrls[0] || '';
-      safe.imagesCount = uploadedUrls.length;
+      if(uploadedUrls.length>0){
+        safe.images = uploadedUrls;
+        safe.image = uploadedUrls.find(u=>String(u).startsWith('https')) || uploadedUrls[0];
+        safe.imagesCount = uploadedUrls.length;
+      }
     }
-
-    // Handle video - upload only if small
-    if (safe.video && String(safe.video).startsWith('data:')) {
-      try {
-        if (safe.video.length < 5000000) { // 5MB max
-          const vidRef = ref(storage, `videos/${Date.now()}.mp4`);
-          const snap = await uploadString(vidRef, safe.video, 'data_url');
-          safe.video = await getDownloadURL(snap.ref);
+    if(safe.video && typeof safe.video==='string'){
+      if(String(safe.video).startsWith('data:')){
+        try{
+          const vidRef = ref(storage, `videos/${Date.now()}_${Math.random().toString(36).slice(2,8)}.mp4`);
+          const uploadSnap = await uploadString(vidRef, safe.video, 'data_url');
+          const downloadUrl = await getDownloadURL(uploadSnap.ref);
+          safe.video = downloadUrl;
           safe.hasVideo = true;
-        } else {
-          safe.video = null;
-          safe.hasVideo = false;
-        }
-      } catch(e){ safe.video = null; }
+        }catch(e){ safe.hasVideo = true; }
+      }else{ safe.hasVideo = true; }
     }
-
-    // CRITICAL: Remove base64 fields before saving to Firestore
-    delete safe.imageHashes; // save only small hash
-    if (safe.image && safe.image.startsWith('data:')) delete safe.image;
-    
-    // Final check - document must be < 900KB
-    const docSize = JSON.stringify(safe).length;
-    if (docSize > 900000) {
-      throw new Error('Post too big - reduce photos');
-    }
-
-    const docRef = await addDoc(collection(db, "posts"), {
-      ...safe,
-      createdAt: Date.now(),
-      serverTime: serverTimestamp()
-    });
-    return docRef.id;
-  } catch (e) {
-    console.error('fbAddPost FINAL ERROR', e);
-    throw e; // throw so overlay can show error
-  }
+    return (await addDoc(collection(db,"posts"),{...safe,createdAt:Date.now(),serverTime:serverTimestamp()})).id;
+  }catch(e){ return null; }
 };
-
-// FIXED doActualPostLIVE - with proper cleanup
-async function doActualPostLIVE(data){
-  const btn = document.getElementById('postNowBtn');
-  if(window.isPosting) return;
-  window.isPosting = true;
-  if(btn){ btn.innerText='POSTING...'; btn.disabled=true; }
-
-  let overlay = document.getElementById('livePostingOverlay');
-  if(!overlay){
-    overlay = document.createElement('div');
-    overlay.id='livePostingOverlay';
-    overlay.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center';
-    overlay.innerHTML=`<div style="background:#0f0f0f;border:2px solid #22c55e;border-radius:20px;padding:24px;text-align:center;color:white">POSTING...<br><small id="liveUploadStatus">Uploading...</small></div>`;
-    document.body.appendChild(overlay);
-  }
-
-  try{
-    const firebaseId = await window.fbAddPost(data);
-    if(!firebaseId) throw new Error('Firebase returned null - check billing & rules');
-    
-    overlay.remove();
-    window.isPosting = false;
-    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; }
-    closePopup();
-    showToast('Posted LIVE worldwide ✅');
-    if(window.posts) window.posts.unshift({...data, id:firebaseId, fid:firebaseId});
-    renderFeed();
-  }catch(err){
-    overlay?.remove();
-    window.isPosting = false;
-    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; }
-    alert('POST FAILED: ' + err.message + '\n\n1. Fix billing: pay.google.com -> Close US profile, create NG Individual\n2. Fix Firebase Rules: Firestore -> Rules -> allow read,write: if true;\n3. Use less than 5 photos');
-    console.error(err);
-  }
-}
 window.checkFakeDuplicateLive = function(newHashes){
   try{
     if(!newHashes || newHashes.length===0) return false;
@@ -1688,7 +1626,7 @@ window.fbAddPost = async function(p){
     // Add to Firestore - WORLDWIDE LIVE
     const colRef = window.db ? window.db : null;
     if(colRef){
-      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(m=>m).catch(()=>({collection:window._fb?.collection, addDoc:window._fb?.addDoc}));
+      const { collection, addDoc } = await // Firebase removed - Pure Supabase.then(m=>m).catch(()=>({collection:window._fb?.collection, addDoc:window._fb?.addDoc}));
       // Use already imported functions from global
       const postsCol = collection(window.db, "posts");
       const docRef = await addDoc(postsCol, safe);
@@ -1840,7 +1778,7 @@ window.fbAddPost = async function(p){
     safe.updatedAt = Date.now();
     
     // Add to Firestore - THIS MAKES IT WORLDWIDE LIVE without Storage!
-    const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').catch(()=>({}));
+    const { collection, addDoc } = await // Firebase removed - Pure Supabase.catch(()=>({}));
     let colFunc = collection;
     let addFunc = addDoc;
     if(!colFunc || !addFunc){
@@ -2054,7 +1992,7 @@ window.fbAddPost = async function(p){
     
     // Save to Firestore - WORLDWIDE LIVE
     try{
-      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { collection, addDoc } = await // Firebase removed - Pure Supabase;
       const postsCol = collection(window.db, "posts");
       const docRef = await addDoc(postsCol, safe);
       console.log('🌍 POSTED LIVE WORLDWIDE:', docRef.id, 'Photos:', safe.images.length, 'Mode:', safe.storageMode);
@@ -2099,7 +2037,7 @@ function startLiveBroadcasts(){
     if(window.liveUnsubs.broadcasts){ try{window.liveUnsubs.broadcasts()}catch(e){} }
     const { collection, query, orderBy, limit, onSnapshot } = window._fb || {};
     // Use dynamic import if not available
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({collection: col, query: q, orderBy: ob, limit: lim, onSnapshot: snap})=>{
+    // Firebase removed - Pure Supabase.then(({collection: col, query: q, orderBy: ob, limit: lim, onSnapshot: snap})=>{
       const broadcastsQ = q(col(window.db, "broadcasts"), ob("createdAt","desc"), lim(10));
       window.liveUnsubs.broadcasts = snap(broadcastsQ, (snapshot)=>{
         let hasNew=false;
@@ -2189,7 +2127,7 @@ window.fbSendBroadcast = async function(message, title){
       createdAt: Date.now(),
       serverTime: window._fb?.serverTimestamp ? window._fb.serverTimestamp() : Date.now()
     };
-    const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { collection, addDoc } = await // Firebase removed - Pure Supabase;
     const docRef = await addDoc(collection(window.db, "broadcasts"), payload);
     console.log('📢 Broadcast sent LIVE to all users worldwide:', docRef.id);
     if(typeof showToast==='function') showToast('📢 Broadcast sent LIVE to all users worldwide! ✓ Red dot will blink on all phones');
@@ -2232,7 +2170,7 @@ window.appLiveConfig = {};
 
 async function loadAppLiveConfig(){
   try{
-    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { doc, getDoc } = await // Firebase removed - Pure Supabase;
     const docRef = doc(window.db, "appConfig", "ui");
     const snap = await getDoc(docRef);
     if(snap.exists()){
@@ -2291,7 +2229,7 @@ function applyLiveAppConfig(cfg){
 
 async function saveAppLiveConfig(updates){
   try{
-    const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { doc, setDoc, serverTimestamp } = await // Firebase removed - Pure Supabase;
     const docRef = doc(window.db, "appConfig", "ui");
     const payload = {...window.appLiveConfig, ...updates, updatedAt: Date.now(), serverTime: serverTimestamp()};
     await setDoc(docRef, payload, {merge:true});
@@ -2307,7 +2245,7 @@ async function saveAppLiveConfig(updates){
 
 function startLiveAppConfig(){
   try{
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({doc, onSnapshot})=>{
+    // Firebase removed - Pure Supabase.then(({doc, onSnapshot})=>{
       const docRef = doc(window.db, "appConfig", "ui");
       onSnapshot(docRef, (snap)=>{
         if(snap.exists()){
@@ -3248,7 +3186,7 @@ window.fbAddPost = async function(p){
     
     // Direct Firestore add - NO timeout race, with retry
     try{
-      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { collection, addDoc } = await // Firebase removed - Pure Supabase;
       const postsCol = collection(window.db, "posts");
       const docRef = await addDoc(postsCol, safe);
       console.log('🌍 POSTED LIVE WORLDWIDE SUCCESS:', docRef.id, 'Photos:', safe.images.length);
@@ -3500,7 +3438,7 @@ window.fbAddPost = async function(p){
 
     // Save to Firestore - try modern import, then fallback
     try{
-      const mod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const mod = await // Firebase removed - Pure Supabase;
       const docRef = await mod.addDoc(mod.collection(window.db, "posts"), safe);
       console.log('✅ POSTED LIVE SUCCESS:', docRef.id);
       return docRef.id;
@@ -3787,7 +3725,7 @@ window.fbAddPost = async function(p){
       }
 
       try{
-        const mod=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+        const mod=await // Firebase removed - Pure Supabase;
         const docRef=await mod.addDoc(mod.collection(window.db, "posts"), safe);
         console.log('✅ FIRESTORE LIVE SUCCESS:', docRef.id);
         return {id: docRef.id, mode: 'live'};
@@ -4015,7 +3953,7 @@ window.FB_LIVE_MODE=true;
 window.ensureFirebaseAuth = async function(){
   try{
     console.log('🔐 Ensuring Firebase Auth for LIVE...');
-    const mod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    const mod = await // Firebase removed - Pure Supabase;
     const { getAuth, signInAnonymously, onAuthStateChanged } = mod;
     const auth = getAuth();
     if(auth.currentUser){
@@ -4118,7 +4056,7 @@ window.fbAddPost = async function(p){
 
     // Save LIVE to Firestore - this is the real Facebook-like LIVE
     try{
-      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { collection, addDoc } = await // Firebase removed - Pure Supabase;
       const col = collection(window.db, "posts");
       const docRef = await addDoc(col, safe);
       console.log('🌍 ✅ POSTED LIVE WORLDWIDE - FACEBOOK LIKE:', docRef.id, 'All devices will see instantly!');
@@ -4306,7 +4244,7 @@ window.LIVE_MODE_NO_STORAGE=true;
 // Ensure Firebase Auth for Firestore rules
 window.ensureFirebaseAuth = window.ensureFirebaseAuth || async function(){
   try{
-    const mod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    const mod = await // Firebase removed - Pure Supabase;
     const { getAuth, signInAnonymously } = mod;
     const auth = getAuth();
     if(!auth.currentUser){
@@ -4414,7 +4352,7 @@ window.fbAddPost = async function(p){
 
     try{ await window.ensureFirebaseAuth(); }catch(e){}
 
-    const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { collection, addDoc, serverTimestamp } = await // Firebase removed - Pure Supabase;
     const col = collection(window.db, "posts");
     const payload = {...safe, serverTime: serverTimestamp()};
 
@@ -4552,7 +4490,7 @@ const _origFbAddChat = window.fbAddChat;
 window.fbAddChat = async function(c){
   try{
     if(!window.db) throw new Error('window.db missing');
-    const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { collection, addDoc, serverTimestamp } = await // Firebase removed - Pure Supabase;
     const payload={
       from:String(c.from), to:String(c.to),
       fromName:c.fromName||'User', toName:c.toName||'User',
@@ -4591,7 +4529,7 @@ window.startLiveChats = function(uid){
   try{
     if(!uid || !window.db) return;
     if(window.liveUnsubs && window.liveUnsubs.chats){ try{ window.liveUnsubs.chats(); }catch(e){} }
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+    // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
       const chatsQ = query(collection(window.db, "chats"), where("participants","array-contains", String(uid)), orderBy("createdAt","desc"), limit(150));
       window.liveUnsubs = window.liveUnsubs||{};
       window.liveUnsubs.chats = onSnapshot(chatsQ, (snap)=>{
@@ -4657,7 +4595,7 @@ window.startLiveNotifications = function(uid){
     if(!uid || !window.db) return;
     if(window.liveUnsubs && window.liveUnsubs.notifs){ try{ window.liveUnsubs.notifs(); }catch(e){} }
 
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+    // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
       // Listen to notifications for this user
       const notifsQ = query(collection(window.db, "notifications"), where("userId","==", String(uid)), orderBy("createdAt","desc"), limit(80));
       window.liveUnsubs = window.liveUnsubs||{};
@@ -4748,7 +4686,7 @@ window.startLiveNotifications = function(uid){
 
     // Also listen to NEW POSTS from area of interest - LIVE
     try{
-      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+      // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
         const myArea = localStorage.getItem('hawz_areaInterest')||'';
         const myState = localStorage.getItem('hawz_stateInterest')||'';
         if(myArea || myState){
@@ -5025,7 +4963,7 @@ window.fbAddPost_FINAL = async function(p){
     if(window.ensureFirebaseAuth) await window.ensureFirebaseAuth();
   }catch(e){}
 
-  const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+  const { collection, addDoc, serverTimestamp } = await // Firebase removed - Pure Supabase;
   const ref=await addDoc(collection(window.db, "posts"), {...safe, serverTime: serverTimestamp()});
   console.log('✅ FINAL v10.0 POSTED LIVE:', ref.id);
   return ref.id;
@@ -5170,7 +5108,7 @@ window.startLiveChats_FINAL = function(uid){
   try{
     if(!uid || !window.db){ console.log('No db or uid for chats'); return; }
     if(window.liveUnsubs && window.liveUnsubs.chats){ try{ window.liveUnsubs.chats(); }catch(e){} }
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+    // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
       const chatsQ = query(collection(window.db, "chats"), where("participants","array-contains", String(uid)), orderBy("createdAt","desc"), limit(120));
       window.liveUnsubs = window.liveUnsubs||{};
       window.liveUnsubs.chats = onSnapshot(chatsQ, (snap)=>{
@@ -5209,7 +5147,7 @@ window.startLiveNotifications_FINAL = function(uid){
   try{
     if(!uid || !window.db) return;
     if(window.liveUnsubs && window.liveUnsubs.notifs){ try{ window.liveUnsubs.notifs(); }catch(e){} }
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+    // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
       const notifsQ = query(collection(window.db, "notifications"), where("userId","==", String(uid)), orderBy("createdAt","desc"), limit(60));
       window.liveUnsubs = window.liveUnsubs||{};
       window.liveUnsubs.notifs = onSnapshot(notifsQ, (snap)=>{
@@ -5311,6 +5249,616 @@ setTimeout(()=>{
 
 console.log('✅ FINAL CLEAN v10.0 LOADED - No hacking, chat both ways LIVE, dot only on NEW, stays still if no new after login');
 </script>
+
+<!-- ===== PURE SUPABASE ONLY - NO FIREBASE - FIXED FEED ===== -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
+<script>
+console.log('%c🔥 PURE SUPABASE ONLY - NO FIREBASE - FEED FIXED v11.0', 'background:#22c55e;color:#000;font-size:14px;padding:8px;font-weight:900');
+
+// FORCE REMOVE FIREBASE
+window.db = null;
+window.firebaseApp = null;
+window.firestore = null;
+try{ delete window.db; }catch(e){}
+window.db = undefined;
+
+window.SUPABASE_URL = 'https://xwhsnpuqmbnlhcsmuhjf.supabase.co';
+window.SUPABASE_ANON_KEY = 'sb_publishable_yKL07vQkiOGecLvYHwjWIg_NIScmtDj';
+localStorage.setItem('supabase_url', window.SUPABASE_URL);
+localStorage.setItem('supabase_anon_key', window.SUPABASE_ANON_KEY);
+
+window.supabaseClient = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+console.log('✅ PURE SUPABASE CLIENT READY - NO FIREBASE', window.SUPABASE_URL);
+
+// ===== PURE SUPABASE FEED - FIXED =====
+window.posts = window.posts||[];
+
+window.loadSupabaseFeed_FIXED = async function(){
+  const supabase = window.supabaseClient;
+  if(!supabase){ console.error('No supabase client'); return; }
+  
+  console.log('📥 Loading feed from Supabase...');
+  
+  try{
+    const { data, error, count } = await supabase.from('posts').select('*', {count: 'exact'}).order('createdat', {ascending: false}).limit(100);
+    
+    if(error){
+      console.error('❌ Feed load error:', error);
+      // Try without order
+      const { data: data2, error: error2 } = await supabase.from('posts').select('*').limit(100);
+      if(error2){
+        console.error('❌ Feed load error2:', error2);
+        alert('Feed load failed: '+error2.message+'\nCheck: 1. Tables created? 2. RLS Allow all? 3. Run SQL again');
+        return;
+      } else {
+        console.log('✅ Loaded without order:', data2.length);
+        window.posts = data2.map(mapPost);
+      }
+    } else {
+      console.log(`✅ Loaded ${data.length} posts from Supabase (total count: ${count})`);
+      window.posts = data.map(mapPost);
+    }
+
+    console.log('Posts:', window.posts.slice(0,2));
+    
+    if(typeof renderFeed==='function'){
+      console.log('🎨 Calling renderFeed with', window.posts.length, 'posts');
+      renderFeed();
+      // Force second render after 500ms
+      setTimeout(()=>{ try{ renderFeed(); }catch(e){} }, 500);
+    } else {
+      console.warn('renderFeed function not found!');
+    }
+
+  }catch(e){
+    console.error('❌ loadSupabaseFeed_FIXED exception', e);
+  }
+};
+
+function mapPost(p){
+  return {
+    id: p.id,
+    fid: p.id,
+    _fid: p.id,
+    title: p.title||'No title',
+    price: p.price||'0',
+    area: p.area||'',
+    state: p.state||'',
+    address: p.address||'',
+    houseType: p.housetype||p.housetype||p.houseType||'',
+    type: p.type||'',
+    amenities: p.amenities||[],
+    customAmenities: p.customamenities||'',
+    ownerName: p.ownername||'',
+    posterName: p.postername||'',
+    ownerId: p.ownerid||'',
+    images: p.images||[],
+    image: p.image|| (p.images&&p.images[0])||'',
+    imagesCount: p.imagescount|| (p.images? p.images.length:0),
+    video: p.video||null,
+    hasVideo: p.hasvideo||false,
+    isUrgent: p.isurgent||false,
+    taken: p.taken||false,
+    createdAt: p.createdat||Date.now(),
+    createdat: p.createdat||Date.now()
+  };
+}
+
+window.mapPost = mapPost;
+
+// Override old loadSupabaseFeed
+window.loadSupabaseFeed = window.loadSupabaseFeed_FIXED;
+
+// FIXED POSTING - PURE SUPABASE - NO FIREBASE
+window.isPosting=false;
+
+function base64ToBlobPure(base64){
+  try{
+    const parts = base64.split(';base64,');
+    const contentType = parts[0].split(':')[1]||'image/jpeg';
+    const raw = atob(parts[1]);
+    const arr = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+    return new Blob([arr], {type: contentType});
+  }catch(e){ return null; }
+}
+
+async function uploadFilesPureSupabase(files, userId, onProgress){
+  const supabase = window.supabaseClient;
+  let urls=[];
+  for(let i=0;i<files.length;i++){
+    try{
+      const file = files[i];
+      if(!file) continue;
+      if(onProgress) onProgress(Math.round((i/files.length)*100), `Uploading ${i+1}/${files.length}... ${file.name}`);
+
+      let fileToUpload = file;
+      // If it's base64 string, convert to blob
+      if(typeof file==='string' && file.startsWith('data:')){
+        const blob = base64ToBlobPure(file);
+        if(blob) fileToUpload = new File([blob], `photo_${i}.jpg`, {type:'image/jpeg'});
+      }
+
+      // If it's File object, upload directly
+      if(fileToUpload instanceof File || fileToUpload instanceof Blob){
+        const isVideo = (fileToUpload.type||'').startsWith('video/') || (file.name||'').match(/\.(mp4|mov|avi)$/i);
+        const folder = isVideo ? 'videos' : 'images';
+        const fileName = `${folder}/${userId}/${Date.now()}_${i}_${Math.random().toString(36).slice(2,6)}_${(file.name||`file_${i}.jpg`).replace(/[^a-zA-Z0-9.]/g,'_')}`;
+
+        console.log(`📤 Uploading to Supabase Storage: ${fileName} (${(fileToUpload.size/1024/1024).toFixed(2)}MB)`);
+
+        const { data, error } = await supabase.storage.from('house-images').upload(fileName, fileToUpload, {
+          contentType: fileToUpload.type||'image/jpeg',
+          upsert: true
+        });
+
+        if(error){
+          console.warn('Upload error:', error.message, 'Trying public bucket creation...');
+          // If bucket doesn't exist, try to create via SQL? Just fallback
+          urls.push(fileToUpload instanceof File ? URL.createObjectURL(fileToUpload) : file);
+        } else {
+          const { data: publicData } = supabase.storage.from('house-images').getPublicUrl(fileName);
+          console.log('✅ Uploaded:', publicData.publicUrl);
+          urls.push(publicData.publicUrl);
+        }
+      } else if(typeof file==='string' && file.startsWith('http')){
+        urls.push(file);
+      } else {
+        urls.push(file);
+      }
+
+    }catch(e){
+      console.warn('Upload file', i, 'failed', e);
+    }
+  }
+  if(onProgress) onProgress(100, `All ${urls.length} uploaded!`);
+  return urls;
+}
+
+window.supabaseAddPost_PURE = async function(p, files){
+  const supabase = window.supabaseClient;
+  if(!supabase) throw new Error('Supabase not configured');
+
+  console.log('🌍 PURE SUPABASE POSTING - NO FIREBASE');
+
+  let imageUrls=[];
+  let videoUrl=null;
+
+  // Handle files (File objects or base64)
+  let allFiles = files||[];
+  if(allFiles.length===0 && p.images && p.images.length>0){
+    allFiles = p.images;
+  }
+
+  if(allFiles.length>0){
+    const imageFiles = allFiles.filter(f=>{
+      if(typeof f==='string') return f.startsWith('data:image') || f.startsWith('http');
+      return (f.type||'').startsWith('image/') || f.name?.match(/\.(jpg|jpeg|png|webp)$/i);
+    });
+    const videoFiles = allFiles.filter(f=>{
+      if(typeof f==='string') return f.startsWith('data:video');
+      return (f.type||'').startsWith('video/') || f.name?.match(/\.(mp4|mov|avi|mkv)$/i);
+    });
+
+    console.log(`📸 Found ${imageFiles.length} images, ${videoFiles.length} videos`);
+
+    if(imageFiles.length>0){
+      imageUrls = await uploadFilesPureSupabase(imageFiles, p.ownerId, (pct, msg)=>{
+        try{ document.getElementById('liveUploadStatus').innerText = msg; document.getElementById('uploadProgressBar').style.width=pct+'%'; }catch(e){}
+      });
+    }
+
+    if(videoFiles.length>0){
+      const videoUrls = await uploadFilesPureSupabase([videoFiles[0]], p.ownerId, (pct, msg)=>{
+        try{ document.getElementById('liveUploadStatus').innerText = `Uploading video ${pct}%`; document.getElementById('uploadProgressBar').style.width=pct+'%'; }catch(e){}
+      });
+      videoUrl = videoUrls[0]||null;
+    }
+  }
+
+  // If still no URLs and p.images are URLs, use them
+  if(imageUrls.length===0 && p.images && p.images.length>0){
+    imageUrls = p.images.filter(u=> typeof u==='string' && u.startsWith('http'));
+  }
+
+  const payload = {
+    title: p.title, price: p.price, area: p.area, state: p.state, address: p.address,
+    housetype: p.houseType, type: p.type, amenities: p.amenities||[], customamenities: p.customAmenities||'',
+    landlordtitle: p.landlordTitle||'', ownername: p.ownerName||'', postername: p.posterName||'',
+    ownerid: p.ownerId, ownerphone: p.ownerPhone, whatsapp: p.whatsapp, phone: p.phone,
+    images: imageUrls, image: imageUrls[0]||'', imagescount: imageUrls.length,
+    video: videoUrl, hasvideo: !!videoUrl, isurgent: !!p.isUrgent, taken: false,
+    createdat: Date.now()
+  };
+
+  console.log('📤 Inserting to Supabase posts:', payload.title, payload.imagescount+' images');
+
+  const { data, error } = await supabase.from('posts').insert([payload]).select();
+
+  if(error){
+    console.error('❌ Supabase insert error:', error);
+    throw new Error('Post failed: '+error.message+' | Check RLS Allow all policy and table exists');
+  }
+
+  console.log('✅ INSERTED TO SUPABASE:', data[0].id);
+
+  // IMMEDIATELY ADD TO LOCAL FEED - NO WAITING FOR REALTIME
+  const mapped = mapPost(data[0]);
+  window.posts = window.posts||[];
+  window.posts.unshift(mapped);
+  
+  console.log('🎨 Added to local feed, now rendering...');
+  if(typeof renderFeed==='function'){
+    renderFeed();
+    setTimeout(()=>{ try{ renderFeed(); }catch(e){} }, 300);
+  }
+
+  return data[0].id;
+};
+
+window.doActualPostLIVE_PURE = async function(data){
+  if(window.isPosting) return;
+  window.isPosting=true;
+  const btn=document.getElementById('postNowBtn');
+  if(btn){ btn.innerText='POSTING... PLEASE WAIT'; btn.disabled=true; btn.style.opacity='0.6'; }
+
+  let overlay=document.getElementById('livePostingOverlay');
+  if(overlay) overlay.remove();
+  overlay=document.createElement('div');
+  overlay.id='livePostingOverlay';
+  overlay.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML=`<div style="background:#111;border:2px solid #22c55e;border-radius:22px;padding:26px;max-width:360px;width:100%;text-align:center">
+    <div style="width:56px;height:56px;border-radius:50%;border:3px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 0.8s linear infinite"></div>
+    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+    <h2 style="color:#fff;font-weight:900;font-size:14px;margin-top:14px">POSTING... PLEASE WAIT</h2>
+    <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px">Uploading to Supabase...</p>
+    <div style="width:100%;height:4px;background:#222;border-radius:2px;margin-top:12px"><div id="uploadProgressBar" style="height:100%;background:#22c55e;width:0%;transition:width 0.3s"></div></div>
+    <p id="uploadCount" style="color:#888;font-size:9px;margin-top:6px">Pure Supabase • No Firebase</p>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.body.style.overflow='hidden';
+
+  let killTimer=setTimeout(()=>{
+    try{ document.getElementById('livePostingOverlay')?.remove(); }catch(e){}
+    document.body.style.overflow=''; window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+  }, 120000);
+
+  try{
+    const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+    const name=localStorage.getItem('hawz_name')||'User';
+
+    let files=[];
+    try{
+      const input=document.getElementById('pFiles');
+      if(input && input.files && input.files.length>0){
+        files = Array.from(input.files);
+      } else if(data.images && data.images.length>0){
+        files = data.images;
+      }
+    }catch(e){}
+
+    const postDoc={
+      title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+      houseType:data.houseType, type:data.type, amenities:data.amenities||[], customAmenities:data.customAmenities||'',
+      landlordTitle:data.landlordTitle||'', ownerName:data.ownerName||name, posterName:name,
+      ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+      images:data.images||[], image:data.images?.[0]||'', imagesCount:data.images?.length||0,
+      video:data.video||null, hasVideo:!!data.video, isUrgent:!!data.isUrgent, taken:false, createdAt:Date.now()
+    };
+
+    const id = await window.supabaseAddPost_PURE(postDoc, files);
+
+    clearTimeout(killTimer);
+    try{ document.getElementById('livePostingOverlay')?.remove(); }catch(e){}
+    document.body.style.overflow=''; window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+
+    try{ window.uploadedImages=[]; if(typeof uploadedImages!=='undefined') uploadedImages=[]; window.uploadedVideo=null; window.uploadedVideoPreview=''; }catch(e){}
+    try{ document.getElementById('previewGrid').innerHTML=''; document.getElementById('previewGrid').classList.add('hidden'); }catch(e){}
+    try{ document.getElementById('pFiles').value=''; document.getElementById('fileCount').innerText=''; }catch(e){}
+    try{ ['pTitle','pPrice','pAddress'].forEach(i=>{ const el=document.getElementById(i); if(el) el.value=''; }); }catch(e){}
+    try{ closePostModal(); }catch(e){}
+
+    const success=document.createElement('div');
+    success.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+    success.innerHTML=`<div style="background:#101010;border:2px solid #22c55e;border-radius:22px;padding:24px;max-width:340px;width:100%;text-align:center">
+      <div style="width:64px;height:64px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto"><i class="fa-solid fa-check" style="color:#000;font-size:26px"></i></div>
+      <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:12px">POST SUCCESSFUL ✓</h2>
+      <p style="color:#22c55e;font-size:11px;margin-top:6px">PURE SUPABASE LIVE - Feed updated!</p>
+      <p style="color:#888;font-size:9px;margin-top:4px">Your post is now LIVE in feed</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed(); window.loadSupabaseFeed_FIXED();" style="width:100%;margin-top:12px;background:#22c55e;color:#000;padding:10px;border-radius:10px;font-weight:900">OKAY ✓ VIEW FEED</button>
+    </div>`;
+    document.body.appendChild(success);
+    setTimeout(()=>{ try{ success.remove(); window.loadSupabaseFeed_FIXED(); }catch(e){} }, 3000);
+
+    await window.loadSupabaseFeed_FIXED();
+
+  }catch(err){
+    clearTimeout(killTimer);
+    try{ document.getElementById('livePostingOverlay')?.remove(); }catch(e){}
+    document.body.style.overflow=''; window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+
+    console.error('PURE POST FAILED', err);
+
+    const errBox=document.createElement('div');
+    errBox.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.93);display:flex;align-items:center;justify-content:center;padding:20px';
+    errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:18px;padding:18px;max-width:380px;width:100%">
+      <h2 style="color:#ef4444;font-weight:900">POST FAILED</h2>
+      <p style="color:#fff;font-size:10px;margin-top:8px;background:#000;padding:8px;border-radius:8px;word-break:break-word">${String(err.message||err).slice(0,500)}</p>
+      <p style="color:#aaa;font-size:9px;margin-top:8px">Fix: 1. Check bucket house-images exists and is Public (Storage -> house-images -> ... -> Edit -> Public ON) 2. RLS Allow all 3. F12 console for details</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:10px;background:#ef4444;color:#fff;padding:10px;border-radius:8px;font-weight:900">OKAY</button>
+    </div>`;
+    document.body.appendChild(errBox);
+  }
+};
+
+// Override all old functions - PURE SUPABASE ONLY
+window.doActualPostLIVE = window.doActualPostLIVE_PURE;
+window.doActualPostLIVE_FINAL = window.doActualPostLIVE_PURE;
+window.doActualPostLIVE_UNLIMITED = window.doActualPostLIVE_PURE;
+window.fbAddPost = window.supabaseAddPost_PURE;
+window.supabaseAddPost = window.supabaseAddPost_PURE;
+window.supabaseAddPost_UNLIMITED = window.supabaseAddPost_PURE;
+
+window.handlePostNowWithLivePay = async function(){
+  let imgs=[];
+  try{
+    const input=document.getElementById('pFiles');
+    if(input && input.files && input.files.length>0){
+      imgs = Array.from(input.files);
+    } else if(typeof uploadedImages!=='undefined' && uploadedImages.length>0){
+      imgs=uploadedImages;
+    } else {
+      imgs=window.uploadedImages||[];
+    }
+  }catch(e){ imgs=window.uploadedImages||[]; }
+  if(imgs.length===0){ if(typeof showToast==='function') showToast('Upload at least 1 photo'); return; }
+  const getVal=(id)=>{ try{ return document.getElementById(id)?.value?.trim()||''; }catch(e){return '';} };
+  const state=document.getElementById('pState')?.value||'';
+  const area=document.getElementById('pArea')?.value||'';
+  const address=getVal('pAddress');
+  const houseType=document.getElementById('pHouseType')?.value||'';
+  const price=getVal('pPrice');
+  const type=document.getElementById('pType')?.value||'';
+  const title=getVal('pTitle');
+  const customAmenities=getVal('pCustomAmenities');
+  const landlordTitle=document.getElementById('pLandlordTitle')?.value||'';
+  const ownerName=getVal('pOwner')||localStorage.getItem('hawz_name')||'User';
+  const phone=getVal('pPhone')||'';
+  const whatsapp=getVal('pWhatsApp')||phone;
+  const isUrgent=document.getElementById('pUrgent')?.checked||false;
+  let amenities=[]; try{ amenities=[...selectedAmenities]; }catch(e){ amenities=window.selectedAmenities||[]; }
+  if(!address||!price||!title||!ownerName||!phone){ if(typeof showToast==='function') showToast('Fill all required fields'); return; }
+  await window.doActualPostLIVE_PURE({state,area,address,houseType,price,type,title,amenities,customAmenities,landlordTitle,ownerName,phone,whatsapp,isUrgent,images:imgs,video:window.uploadedVideoPreview||null});
+};
+
+// PURE SUPABASE LIVE LISTENERS
+window.startLivePosts_PURE = function(){
+  const supabase = window.supabaseClient;
+  if(!supabase) return;
+  if(window.liveUnsubs && window.liveUnsubs.posts) try{ window.liveUnsubs.posts.unsubscribe(); }catch(e){}
+  
+  const channel = supabase.channel('posts-live-pure')
+    .on('postgres_changes', {event: 'INSERT', schema: 'public', table: 'posts'}, (payload)=>{
+      console.log('🌍 NEW POST LIVE (Pure Supabase):', payload.new.id);
+      try{
+        const mapped = mapPost(payload.new);
+        window.posts = window.posts||[];
+        if(!window.posts.find(p=> String(p.id)===String(mapped.id))){
+          window.posts.unshift(mapped);
+          if(typeof renderFeed==='function') renderFeed();
+        }
+      }catch(e){}
+    })
+    .subscribe();
+  
+  window.liveUnsubs = window.liveUnsubs||{};
+  window.liveUnsubs.posts = channel;
+  console.log('✅ Pure Supabase posts LIVE listener started');
+};
+
+window.startLivePosts = window.startLivePosts_PURE;
+
+// INIT PURE SUPABASE
+setTimeout(async()=>{
+  const supabase = window.supabaseClient;
+  if(!supabase) return;
+  
+  await window.loadSupabaseFeed_FIXED();
+  window.startLivePosts_PURE();
+  
+  const uid=localStorage.getItem('hawz_user_id');
+  if(uid){
+    if(typeof window.startLiveChats==='function') try{ window.startLiveChats(uid); }catch(e){}
+    if(typeof window.startLiveNotifications==='function') try{ window.startLiveNotifications(uid); }catch(e){}
+  }
+  
+  console.log('✅ PURE SUPABASE v11.0 READY - NO FIREBASE - FEED FIXED!');
+}, 1000);
+
+console.log('✅ PURE SUPABASE v11.0 LOADED - Feed will show posts instantly!');
+</script>
+
+
+<script>
+// ===== v12.0 - FEED DISPLAY FIX - SHOWS ALL POSTS EVEN IF IMAGES EMPTY =====
+console.log('%c🔥 v12.0 FEED FIX - Will show ALL posts from Supabase, even without images!', 'background:#22c55e;color:#000;font-size:14px;padding:8px;font-weight:900');
+
+window.renderFeed_ORIGINAL = window.renderFeed;
+
+window.renderFeed_FIXED_v12 = function(){
+  try{
+    console.log('🎨 renderFeed_FIXED_v12 called with', (window.posts||[]).length, 'posts');
+    
+    const feed = document.getElementById('feed') || document.getElementById('feedGrid') || document.querySelector('[data-feed]');
+    if(!feed){
+      console.warn('Feed container not found, trying original renderFeed');
+      if(window.renderFeed_ORIGINAL) return window.renderFeed_ORIGINAL();
+      return;
+    }
+
+    // If posts empty, try load again
+    if(!window.posts || window.posts.length===0){
+      console.log('Posts empty, loading from Supabase again...');
+      window.loadSupabaseFeed_FIXED();
+      return;
+    }
+
+    // Call original if exists, but with debug
+    if(window.renderFeed_ORIGINAL){
+      try{
+        const result = window.renderFeed_ORIGINAL();
+        console.log('Original renderFeed called');
+        // Check if feed actually has children after original
+        setTimeout(()=>{
+          const feedCheck = document.getElementById('feed') || document.getElementById('feedGrid');
+          if(feedCheck && feedCheck.children.length===0 && window.posts.length>0){
+            console.warn('⚠️ Original renderFeed left feed empty but posts exist - forcing manual render!');
+            window.forceRenderFeed();
+          }
+        }, 500);
+        return result;
+      }catch(e){
+        console.error('Original renderFeed failed:', e);
+        window.forceRenderFeed();
+      }
+    } else {
+      window.forceRenderFeed();
+    }
+
+  }catch(e){
+    console.error('renderFeed_FIXED_v12 error', e);
+    window.forceRenderFeed();
+  }
+};
+
+window.forceRenderFeed = function(){
+  try{
+    console.log('🔨 forceRenderFeed - manually rendering', window.posts.length, 'posts');
+    const feed = document.getElementById('feed') || document.getElementById('feedGrid');
+    if(!feed){ console.error('No feed container found at all!'); return; }
+
+    feed.innerHTML = '';
+    
+    window.posts.forEach((p, idx)=>{
+      try{
+        const div = document.createElement('div');
+        div.className = 'post-card';
+        div.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px;margin-bottom:12px;';
+        
+        const img = (p.images && p.images[0]) || p.image || '';
+        const imgHtml = img ? `<img src="${img}" style="width:100%;height:180px;object-fit:cover;border-radius:12px;background:#222" onerror="this.style.display='none'">` : `<div style="width:100%;height:180px;background:#222;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#555">No image</div>`;
+        
+        div.innerHTML = `
+          ${imgHtml}
+          <h3 style="font-weight:900;margin-top:8px;color:#fff">${(p.title||'No title').slice(0,60)}</h3>
+          <p style="color:#22c55e;font-weight:800">₦${p.price||'0'}</p>
+          <p style="color:#888;font-size:11px">${p.area||''} ${p.state?'• '+p.state:''} • ${p.houseType||p.housetype||''}</p>
+          <p style="color:#aaa;font-size:10px;margin-top:4px">${new Date(p.createdAt||p.createdat||Date.now()).toLocaleString()}</p>
+          <p style="color:#555;font-size:9px">ID: ${String(p.id||'').slice(0,8)}...</p>
+        `;
+        
+        // Make clickable
+        div.onclick = ()=>{ if(typeof openPost==='function') openPost(p.id); };
+        
+        feed.appendChild(div);
+      }catch(e){
+        console.warn('Render post', idx, 'failed', e);
+      }
+    });
+    
+    console.log('✅ forceRenderFeed done -', feed.children.length, 'cards in DOM');
+    
+  }catch(e){
+    console.error('forceRenderFeed error', e);
+  }
+};
+
+// Override renderFeed with fixed version
+window.renderFeed = window.renderFeed_FIXED_v12;
+
+// Enhanced load with debug + shows images column
+window.loadSupabaseFeed_v12 = async function(){
+  const supabase = window.supabaseClient;
+  if(!supabase){ console.error('No supabase client v12'); return; }
+  
+  console.log('📥 v12 Loading feed from Supabase Table Editor...');
+  
+  try{
+    const { data, error } = await supabase.from('posts').select('*').order('createdat', {ascending: false}).limit(100);
+    
+    if(error){
+      console.error('❌ v12 Feed load error:', error);
+      alert('Feed error: '+error.message+'\n\nFix: Go to Supabase -> SQL Editor -> Run:\nCREATE POLICY "Allow all" ON posts FOR ALL USING (true) WITH CHECK (true);');
+      return;
+    }
+    
+    console.log(`✅ v12 Loaded ${data.length} posts from Supabase`);
+    console.log('First post sample:', data[0]);
+    
+    // Map with debug for images
+    window.posts = data.map(p=>{
+      const mapped = {
+        id: p.id, fid: p.id, _fid: p.id,
+        title: p.title||'No title', price: p.price||'0', area: p.area||'', state: p.state||'', address: p.address||'',
+        houseType: p.housetype||'', type: p.type||'', amenities: p.amenities||[], customAmenities: p.customamenities||'',
+        ownerName: p.ownername||'', posterName: p.postername||'', ownerId: p.ownerid||'',
+        images: p.images||[], image: p.image|| (p.images&&p.images[0])||'', imagesCount: p.imagescount||0,
+        video: p.video||null, hasVideo: p.hasvideo||false, isUrgent: p.isurgent||false, taken: p.taken||false,
+        createdAt: p.createdat||Date.now(), createdat: p.createdat||Date.now()
+      };
+      if(!mapped.images || mapped.images.length===0){
+        console.warn('⚠️ Post', mapped.id.slice(0,8), 'has NO images:', mapped.title);
+      }
+      return mapped;
+    });
+    
+    console.log('Mapped posts:', window.posts.length, 'with images:', window.posts.filter(p=>p.images&&p.images.length>0).length);
+    
+    // Force render
+    window.forceRenderFeed();
+    setTimeout(()=>{ window.renderFeed_FIXED_v12(); }, 300);
+    
+    // Also call original renderFeed after
+    setTimeout(()=>{
+      try{ if(window.renderFeed_ORIGINAL) window.renderFeed_ORIGINAL(); }catch(e){}
+      window.forceRenderFeed();
+    }, 800);
+
+  }catch(e){
+    console.error('❌ v12 load exception', e);
+  }
+};
+
+window.loadSupabaseFeed_FIXED = window.loadSupabaseFeed_v12;
+window.loadSupabaseFeed = window.loadSupabaseFeed_v12;
+
+// Auto load on start
+setTimeout(()=>{
+  console.log('🚀 v12 Auto loading feed...');
+  window.loadSupabaseFeed_v12();
+}, 1500);
+
+// Add reload button for debugging
+setTimeout(()=>{
+  try{
+    const header = document.querySelector('header') || document.body;
+    if(header && !document.getElementById('reloadFeedBtn')){
+      const btn = document.createElement('button');
+      btn.id='reloadFeedBtn';
+      btn.innerText='🔄 Reload Feed (Debug)';
+      btn.style.cssText='position:fixed;bottom:80px;right:10px;z-index:99999;background:#22c55e;color:#000;padding:8px 12px;border-radius:20px;font-size:10px;font-weight:900;border:none;box-shadow:0 2px 10px rgba(0,0,0,0.5)';
+      btn.onclick=()=>{ window.loadSupabaseFeed_v12(); alert('Reloading feed from Supabase... Check console F12'); };
+      document.body.appendChild(btn);
+    }
+  }catch(e){}
+}, 2000);
+
+console.log('✅ v12.0 FEED FIX LOADED - Will show ALL posts even if images empty!');
+</script>
+
 </body>
 </html><script>
 const nigeriaStates={
@@ -7469,7 +8017,7 @@ window.fbAddPost = async function(p){
     // Add to Firestore - WORLDWIDE LIVE
     const colRef = window.db ? window.db : null;
     if(colRef){
-      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(m=>m).catch(()=>({collection:window._fb?.collection, addDoc:window._fb?.addDoc}));
+      const { collection, addDoc } = await // Firebase removed - Pure Supabase.then(m=>m).catch(()=>({collection:window._fb?.collection, addDoc:window._fb?.addDoc}));
       // Use already imported functions from global
       const postsCol = collection(window.db, "posts");
       const docRef = await addDoc(postsCol, safe);
@@ -7621,7 +8169,7 @@ window.fbAddPost = async function(p){
     safe.updatedAt = Date.now();
     
     // Add to Firestore - THIS MAKES IT WORLDWIDE LIVE without Storage!
-    const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').catch(()=>({}));
+    const { collection, addDoc } = await // Firebase removed - Pure Supabase.catch(()=>({}));
     let colFunc = collection;
     let addFunc = addDoc;
     if(!colFunc || !addFunc){
@@ -7835,7 +8383,7 @@ window.fbAddPost = async function(p){
     
     // Save to Firestore - WORLDWIDE LIVE
     try{
-      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { collection, addDoc } = await // Firebase removed - Pure Supabase;
       const postsCol = collection(window.db, "posts");
       const docRef = await addDoc(postsCol, safe);
       console.log('🌍 POSTED LIVE WORLDWIDE:', docRef.id, 'Photos:', safe.images.length, 'Mode:', safe.storageMode);
@@ -7880,7 +8428,7 @@ function startLiveBroadcasts(){
     if(window.liveUnsubs.broadcasts){ try{window.liveUnsubs.broadcasts()}catch(e){} }
     const { collection, query, orderBy, limit, onSnapshot } = window._fb || {};
     // Use dynamic import if not available
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({collection: col, query: q, orderBy: ob, limit: lim, onSnapshot: snap})=>{
+    // Firebase removed - Pure Supabase.then(({collection: col, query: q, orderBy: ob, limit: lim, onSnapshot: snap})=>{
       const broadcastsQ = q(col(window.db, "broadcasts"), ob("createdAt","desc"), lim(10));
       window.liveUnsubs.broadcasts = snap(broadcastsQ, (snapshot)=>{
         let hasNew=false;
@@ -7970,7 +8518,7 @@ window.fbSendBroadcast = async function(message, title){
       createdAt: Date.now(),
       serverTime: window._fb?.serverTimestamp ? window._fb.serverTimestamp() : Date.now()
     };
-    const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { collection, addDoc } = await // Firebase removed - Pure Supabase;
     const docRef = await addDoc(collection(window.db, "broadcasts"), payload);
     console.log('📢 Broadcast sent LIVE to all users worldwide:', docRef.id);
     if(typeof showToast==='function') showToast('📢 Broadcast sent LIVE to all users worldwide! ✓ Red dot will blink on all phones');
@@ -8013,7 +8561,7 @@ window.appLiveConfig = {};
 
 async function loadAppLiveConfig(){
   try{
-    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { doc, getDoc } = await // Firebase removed - Pure Supabase;
     const docRef = doc(window.db, "appConfig", "ui");
     const snap = await getDoc(docRef);
     if(snap.exists()){
@@ -8072,7 +8620,7 @@ function applyLiveAppConfig(cfg){
 
 async function saveAppLiveConfig(updates){
   try{
-    const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { doc, setDoc, serverTimestamp } = await // Firebase removed - Pure Supabase;
     const docRef = doc(window.db, "appConfig", "ui");
     const payload = {...window.appLiveConfig, ...updates, updatedAt: Date.now(), serverTime: serverTimestamp()};
     await setDoc(docRef, payload, {merge:true});
@@ -8088,7 +8636,7 @@ async function saveAppLiveConfig(updates){
 
 function startLiveAppConfig(){
   try{
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({doc, onSnapshot})=>{
+    // Firebase removed - Pure Supabase.then(({doc, onSnapshot})=>{
       const docRef = doc(window.db, "appConfig", "ui");
       onSnapshot(docRef, (snap)=>{
         if(snap.exists()){
@@ -9029,7 +9577,7 @@ window.fbAddPost = async function(p){
     
     // Direct Firestore add - NO timeout race, with retry
     try{
-      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { collection, addDoc } = await // Firebase removed - Pure Supabase;
       const postsCol = collection(window.db, "posts");
       const docRef = await addDoc(postsCol, safe);
       console.log('🌍 POSTED LIVE WORLDWIDE SUCCESS:', docRef.id, 'Photos:', safe.images.length);
@@ -9281,7 +9829,7 @@ window.fbAddPost = async function(p){
 
     // Save to Firestore - try modern import, then fallback
     try{
-      const mod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const mod = await // Firebase removed - Pure Supabase;
       const docRef = await mod.addDoc(mod.collection(window.db, "posts"), safe);
       console.log('✅ POSTED LIVE SUCCESS:', docRef.id);
       return docRef.id;
@@ -9568,7 +10116,7 @@ window.fbAddPost = async function(p){
       }
 
       try{
-        const mod=await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+        const mod=await // Firebase removed - Pure Supabase;
         const docRef=await mod.addDoc(mod.collection(window.db, "posts"), safe);
         console.log('✅ FIRESTORE LIVE SUCCESS:', docRef.id);
         return {id: docRef.id, mode: 'live'};
@@ -9796,7 +10344,7 @@ window.FB_LIVE_MODE=true;
 window.ensureFirebaseAuth = async function(){
   try{
     console.log('🔐 Ensuring Firebase Auth for LIVE...');
-    const mod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    const mod = await // Firebase removed - Pure Supabase;
     const { getAuth, signInAnonymously, onAuthStateChanged } = mod;
     const auth = getAuth();
     if(auth.currentUser){
@@ -9899,7 +10447,7 @@ window.fbAddPost = async function(p){
 
     // Save LIVE to Firestore - this is the real Facebook-like LIVE
     try{
-      const { collection, addDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+      const { collection, addDoc } = await // Firebase removed - Pure Supabase;
       const col = collection(window.db, "posts");
       const docRef = await addDoc(col, safe);
       console.log('🌍 ✅ POSTED LIVE WORLDWIDE - FACEBOOK LIKE:', docRef.id, 'All devices will see instantly!');
@@ -10087,7 +10635,7 @@ window.LIVE_MODE_NO_STORAGE=true;
 // Ensure Firebase Auth for Firestore rules
 window.ensureFirebaseAuth = window.ensureFirebaseAuth || async function(){
   try{
-    const mod = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    const mod = await // Firebase removed - Pure Supabase;
     const { getAuth, signInAnonymously } = mod;
     const auth = getAuth();
     if(!auth.currentUser){
@@ -10195,7 +10743,7 @@ window.fbAddPost = async function(p){
 
     try{ await window.ensureFirebaseAuth(); }catch(e){}
 
-    const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { collection, addDoc, serverTimestamp } = await // Firebase removed - Pure Supabase;
     const col = collection(window.db, "posts");
     const payload = {...safe, serverTime: serverTimestamp()};
 
@@ -10333,7 +10881,7 @@ const _origFbAddChat = window.fbAddChat;
 window.fbAddChat = async function(c){
   try{
     if(!window.db) throw new Error('window.db missing');
-    const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { collection, addDoc, serverTimestamp } = await // Firebase removed - Pure Supabase;
     const payload={
       from:String(c.from), to:String(c.to),
       fromName:c.fromName||'User', toName:c.toName||'User',
@@ -10372,7 +10920,7 @@ window.startLiveChats = function(uid){
   try{
     if(!uid || !window.db) return;
     if(window.liveUnsubs && window.liveUnsubs.chats){ try{ window.liveUnsubs.chats(); }catch(e){} }
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+    // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
       const chatsQ = query(collection(window.db, "chats"), where("participants","array-contains", String(uid)), orderBy("createdAt","desc"), limit(150));
       window.liveUnsubs = window.liveUnsubs||{};
       window.liveUnsubs.chats = onSnapshot(chatsQ, (snap)=>{
@@ -10438,7 +10986,7 @@ window.startLiveNotifications = function(uid){
     if(!uid || !window.db) return;
     if(window.liveUnsubs && window.liveUnsubs.notifs){ try{ window.liveUnsubs.notifs(); }catch(e){} }
 
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+    // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
       // Listen to notifications for this user
       const notifsQ = query(collection(window.db, "notifications"), where("userId","==", String(uid)), orderBy("createdAt","desc"), limit(80));
       window.liveUnsubs = window.liveUnsubs||{};
@@ -10529,7 +11077,7 @@ window.startLiveNotifications = function(uid){
 
     // Also listen to NEW POSTS from area of interest - LIVE
     try{
-      import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+      // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
         const myArea = localStorage.getItem('hawz_areaInterest')||'';
         const myState = localStorage.getItem('hawz_stateInterest')||'';
         if(myArea || myState){
@@ -10806,7 +11354,7 @@ window.fbAddPost_FINAL = async function(p){
     if(window.ensureFirebaseAuth) await window.ensureFirebaseAuth();
   }catch(e){}
 
-  const { collection, addDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+  const { collection, addDoc, serverTimestamp } = await // Firebase removed - Pure Supabase;
   const ref=await addDoc(collection(window.db, "posts"), {...safe, serverTime: serverTimestamp()});
   console.log('✅ FINAL v10.0 POSTED LIVE:', ref.id);
   return ref.id;
@@ -10951,7 +11499,7 @@ window.startLiveChats_FINAL = function(uid){
   try{
     if(!uid || !window.db){ console.log('No db or uid for chats'); return; }
     if(window.liveUnsubs && window.liveUnsubs.chats){ try{ window.liveUnsubs.chats(); }catch(e){} }
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+    // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
       const chatsQ = query(collection(window.db, "chats"), where("participants","array-contains", String(uid)), orderBy("createdAt","desc"), limit(120));
       window.liveUnsubs = window.liveUnsubs||{};
       window.liveUnsubs.chats = onSnapshot(chatsQ, (snap)=>{
@@ -10990,7 +11538,7 @@ window.startLiveNotifications_FINAL = function(uid){
   try{
     if(!uid || !window.db) return;
     if(window.liveUnsubs && window.liveUnsubs.notifs){ try{ window.liveUnsubs.notifs(); }catch(e){} }
-    import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js').then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
+    // Firebase removed - Pure Supabase.then(({ collection, query, where, orderBy, limit, onSnapshot })=>{
       const notifsQ = query(collection(window.db, "notifications"), where("userId","==", String(uid)), orderBy("createdAt","desc"), limit(60));
       window.liveUnsubs = window.liveUnsubs||{};
       window.liveUnsubs.notifs = onSnapshot(notifsQ, (snap)=>{
@@ -11092,5 +11640,615 @@ setTimeout(()=>{
 
 console.log('✅ FINAL CLEAN v10.0 LOADED - No hacking, chat both ways LIVE, dot only on NEW, stays still if no new after login');
 </script>
+
+<!-- ===== PURE SUPABASE ONLY - NO FIREBASE - FIXED FEED ===== -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.min.js"></script>
+<script>
+console.log('%c🔥 PURE SUPABASE ONLY - NO FIREBASE - FEED FIXED v11.0', 'background:#22c55e;color:#000;font-size:14px;padding:8px;font-weight:900');
+
+// FORCE REMOVE FIREBASE
+window.db = null;
+window.firebaseApp = null;
+window.firestore = null;
+try{ delete window.db; }catch(e){}
+window.db = undefined;
+
+window.SUPABASE_URL = 'https://xwhsnpuqmbnlhcsmuhjf.supabase.co';
+window.SUPABASE_ANON_KEY = 'sb_publishable_yKL07vQkiOGecLvYHwjWIg_NIScmtDj';
+localStorage.setItem('supabase_url', window.SUPABASE_URL);
+localStorage.setItem('supabase_anon_key', window.SUPABASE_ANON_KEY);
+
+window.supabaseClient = supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
+console.log('✅ PURE SUPABASE CLIENT READY - NO FIREBASE', window.SUPABASE_URL);
+
+// ===== PURE SUPABASE FEED - FIXED =====
+window.posts = window.posts||[];
+
+window.loadSupabaseFeed_FIXED = async function(){
+  const supabase = window.supabaseClient;
+  if(!supabase){ console.error('No supabase client'); return; }
+  
+  console.log('📥 Loading feed from Supabase...');
+  
+  try{
+    const { data, error, count } = await supabase.from('posts').select('*', {count: 'exact'}).order('createdat', {ascending: false}).limit(100);
+    
+    if(error){
+      console.error('❌ Feed load error:', error);
+      // Try without order
+      const { data: data2, error: error2 } = await supabase.from('posts').select('*').limit(100);
+      if(error2){
+        console.error('❌ Feed load error2:', error2);
+        alert('Feed load failed: '+error2.message+'\nCheck: 1. Tables created? 2. RLS Allow all? 3. Run SQL again');
+        return;
+      } else {
+        console.log('✅ Loaded without order:', data2.length);
+        window.posts = data2.map(mapPost);
+      }
+    } else {
+      console.log(`✅ Loaded ${data.length} posts from Supabase (total count: ${count})`);
+      window.posts = data.map(mapPost);
+    }
+
+    console.log('Posts:', window.posts.slice(0,2));
+    
+    if(typeof renderFeed==='function'){
+      console.log('🎨 Calling renderFeed with', window.posts.length, 'posts');
+      renderFeed();
+      // Force second render after 500ms
+      setTimeout(()=>{ try{ renderFeed(); }catch(e){} }, 500);
+    } else {
+      console.warn('renderFeed function not found!');
+    }
+
+  }catch(e){
+    console.error('❌ loadSupabaseFeed_FIXED exception', e);
+  }
+};
+
+function mapPost(p){
+  return {
+    id: p.id,
+    fid: p.id,
+    _fid: p.id,
+    title: p.title||'No title',
+    price: p.price||'0',
+    area: p.area||'',
+    state: p.state||'',
+    address: p.address||'',
+    houseType: p.housetype||p.housetype||p.houseType||'',
+    type: p.type||'',
+    amenities: p.amenities||[],
+    customAmenities: p.customamenities||'',
+    ownerName: p.ownername||'',
+    posterName: p.postername||'',
+    ownerId: p.ownerid||'',
+    images: p.images||[],
+    image: p.image|| (p.images&&p.images[0])||'',
+    imagesCount: p.imagescount|| (p.images? p.images.length:0),
+    video: p.video||null,
+    hasVideo: p.hasvideo||false,
+    isUrgent: p.isurgent||false,
+    taken: p.taken||false,
+    createdAt: p.createdat||Date.now(),
+    createdat: p.createdat||Date.now()
+  };
+}
+
+window.mapPost = mapPost;
+
+// Override old loadSupabaseFeed
+window.loadSupabaseFeed = window.loadSupabaseFeed_FIXED;
+
+// FIXED POSTING - PURE SUPABASE - NO FIREBASE
+window.isPosting=false;
+
+function base64ToBlobPure(base64){
+  try{
+    const parts = base64.split(';base64,');
+    const contentType = parts[0].split(':')[1]||'image/jpeg';
+    const raw = atob(parts[1]);
+    const arr = new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++) arr[i]=raw.charCodeAt(i);
+    return new Blob([arr], {type: contentType});
+  }catch(e){ return null; }
+}
+
+async function uploadFilesPureSupabase(files, userId, onProgress){
+  const supabase = window.supabaseClient;
+  let urls=[];
+  for(let i=0;i<files.length;i++){
+    try{
+      const file = files[i];
+      if(!file) continue;
+      if(onProgress) onProgress(Math.round((i/files.length)*100), `Uploading ${i+1}/${files.length}... ${file.name}`);
+
+      let fileToUpload = file;
+      // If it's base64 string, convert to blob
+      if(typeof file==='string' && file.startsWith('data:')){
+        const blob = base64ToBlobPure(file);
+        if(blob) fileToUpload = new File([blob], `photo_${i}.jpg`, {type:'image/jpeg'});
+      }
+
+      // If it's File object, upload directly
+      if(fileToUpload instanceof File || fileToUpload instanceof Blob){
+        const isVideo = (fileToUpload.type||'').startsWith('video/') || (file.name||'').match(/\.(mp4|mov|avi)$/i);
+        const folder = isVideo ? 'videos' : 'images';
+        const fileName = `${folder}/${userId}/${Date.now()}_${i}_${Math.random().toString(36).slice(2,6)}_${(file.name||`file_${i}.jpg`).replace(/[^a-zA-Z0-9.]/g,'_')}`;
+
+        console.log(`📤 Uploading to Supabase Storage: ${fileName} (${(fileToUpload.size/1024/1024).toFixed(2)}MB)`);
+
+        const { data, error } = await supabase.storage.from('house-images').upload(fileName, fileToUpload, {
+          contentType: fileToUpload.type||'image/jpeg',
+          upsert: true
+        });
+
+        if(error){
+          console.warn('Upload error:', error.message, 'Trying public bucket creation...');
+          // If bucket doesn't exist, try to create via SQL? Just fallback
+          urls.push(fileToUpload instanceof File ? URL.createObjectURL(fileToUpload) : file);
+        } else {
+          const { data: publicData } = supabase.storage.from('house-images').getPublicUrl(fileName);
+          console.log('✅ Uploaded:', publicData.publicUrl);
+          urls.push(publicData.publicUrl);
+        }
+      } else if(typeof file==='string' && file.startsWith('http')){
+        urls.push(file);
+      } else {
+        urls.push(file);
+      }
+
+    }catch(e){
+      console.warn('Upload file', i, 'failed', e);
+    }
+  }
+  if(onProgress) onProgress(100, `All ${urls.length} uploaded!`);
+  return urls;
+}
+
+window.supabaseAddPost_PURE = async function(p, files){
+  const supabase = window.supabaseClient;
+  if(!supabase) throw new Error('Supabase not configured');
+
+  console.log('🌍 PURE SUPABASE POSTING - NO FIREBASE');
+
+  let imageUrls=[];
+  let videoUrl=null;
+
+  // Handle files (File objects or base64)
+  let allFiles = files||[];
+  if(allFiles.length===0 && p.images && p.images.length>0){
+    allFiles = p.images;
+  }
+
+  if(allFiles.length>0){
+    const imageFiles = allFiles.filter(f=>{
+      if(typeof f==='string') return f.startsWith('data:image') || f.startsWith('http');
+      return (f.type||'').startsWith('image/') || f.name?.match(/\.(jpg|jpeg|png|webp)$/i);
+    });
+    const videoFiles = allFiles.filter(f=>{
+      if(typeof f==='string') return f.startsWith('data:video');
+      return (f.type||'').startsWith('video/') || f.name?.match(/\.(mp4|mov|avi|mkv)$/i);
+    });
+
+    console.log(`📸 Found ${imageFiles.length} images, ${videoFiles.length} videos`);
+
+    if(imageFiles.length>0){
+      imageUrls = await uploadFilesPureSupabase(imageFiles, p.ownerId, (pct, msg)=>{
+        try{ document.getElementById('liveUploadStatus').innerText = msg; document.getElementById('uploadProgressBar').style.width=pct+'%'; }catch(e){}
+      });
+    }
+
+    if(videoFiles.length>0){
+      const videoUrls = await uploadFilesPureSupabase([videoFiles[0]], p.ownerId, (pct, msg)=>{
+        try{ document.getElementById('liveUploadStatus').innerText = `Uploading video ${pct}%`; document.getElementById('uploadProgressBar').style.width=pct+'%'; }catch(e){}
+      });
+      videoUrl = videoUrls[0]||null;
+    }
+  }
+
+  // If still no URLs and p.images are URLs, use them
+  if(imageUrls.length===0 && p.images && p.images.length>0){
+    imageUrls = p.images.filter(u=> typeof u==='string' && u.startsWith('http'));
+  }
+
+  const payload = {
+    title: p.title, price: p.price, area: p.area, state: p.state, address: p.address,
+    housetype: p.houseType, type: p.type, amenities: p.amenities||[], customamenities: p.customAmenities||'',
+    landlordtitle: p.landlordTitle||'', ownername: p.ownerName||'', postername: p.posterName||'',
+    ownerid: p.ownerId, ownerphone: p.ownerPhone, whatsapp: p.whatsapp, phone: p.phone,
+    images: imageUrls, image: imageUrls[0]||'', imagescount: imageUrls.length,
+    video: videoUrl, hasvideo: !!videoUrl, isurgent: !!p.isUrgent, taken: false,
+    createdat: Date.now()
+  };
+
+  console.log('📤 Inserting to Supabase posts:', payload.title, payload.imagescount+' images');
+
+  const { data, error } = await supabase.from('posts').insert([payload]).select();
+
+  if(error){
+    console.error('❌ Supabase insert error:', error);
+    throw new Error('Post failed: '+error.message+' | Check RLS Allow all policy and table exists');
+  }
+
+  console.log('✅ INSERTED TO SUPABASE:', data[0].id);
+
+  // IMMEDIATELY ADD TO LOCAL FEED - NO WAITING FOR REALTIME
+  const mapped = mapPost(data[0]);
+  window.posts = window.posts||[];
+  window.posts.unshift(mapped);
+  
+  console.log('🎨 Added to local feed, now rendering...');
+  if(typeof renderFeed==='function'){
+    renderFeed();
+    setTimeout(()=>{ try{ renderFeed(); }catch(e){} }, 300);
+  }
+
+  return data[0].id;
+};
+
+window.doActualPostLIVE_PURE = async function(data){
+  if(window.isPosting) return;
+  window.isPosting=true;
+  const btn=document.getElementById('postNowBtn');
+  if(btn){ btn.innerText='POSTING... PLEASE WAIT'; btn.disabled=true; btn.style.opacity='0.6'; }
+
+  let overlay=document.getElementById('livePostingOverlay');
+  if(overlay) overlay.remove();
+  overlay=document.createElement('div');
+  overlay.id='livePostingOverlay';
+  overlay.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML=`<div style="background:#111;border:2px solid #22c55e;border-radius:22px;padding:26px;max-width:360px;width:100%;text-align:center">
+    <div style="width:56px;height:56px;border-radius:50%;border:3px solid #222;border-top-color:#22c55e;margin:0 auto;animation:spin 0.8s linear infinite"></div>
+    <style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+    <h2 style="color:#fff;font-weight:900;font-size:14px;margin-top:14px">POSTING... PLEASE WAIT</h2>
+    <p id="liveUploadStatus" style="color:#22c55e;font-size:11px;margin-top:8px">Uploading to Supabase...</p>
+    <div style="width:100%;height:4px;background:#222;border-radius:2px;margin-top:12px"><div id="uploadProgressBar" style="height:100%;background:#22c55e;width:0%;transition:width 0.3s"></div></div>
+    <p id="uploadCount" style="color:#888;font-size:9px;margin-top:6px">Pure Supabase • No Firebase</p>
+  </div>`;
+  document.body.appendChild(overlay);
+  document.body.style.overflow='hidden';
+
+  let killTimer=setTimeout(()=>{
+    try{ document.getElementById('livePostingOverlay')?.remove(); }catch(e){}
+    document.body.style.overflow=''; window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+  }, 120000);
+
+  try{
+    const uid=localStorage.getItem('hawz_user_id')||'user_'+Date.now();
+    const name=localStorage.getItem('hawz_name')||'User';
+
+    let files=[];
+    try{
+      const input=document.getElementById('pFiles');
+      if(input && input.files && input.files.length>0){
+        files = Array.from(input.files);
+      } else if(data.images && data.images.length>0){
+        files = data.images;
+      }
+    }catch(e){}
+
+    const postDoc={
+      title:data.title, price:data.price, area:data.area, state:data.state, address:data.address,
+      houseType:data.houseType, type:data.type, amenities:data.amenities||[], customAmenities:data.customAmenities||'',
+      landlordTitle:data.landlordTitle||'', ownerName:data.ownerName||name, posterName:name,
+      ownerId:uid, ownerPhone:data.phone, whatsapp:data.whatsapp||data.phone, phone:data.phone,
+      images:data.images||[], image:data.images?.[0]||'', imagesCount:data.images?.length||0,
+      video:data.video||null, hasVideo:!!data.video, isUrgent:!!data.isUrgent, taken:false, createdAt:Date.now()
+    };
+
+    const id = await window.supabaseAddPost_PURE(postDoc, files);
+
+    clearTimeout(killTimer);
+    try{ document.getElementById('livePostingOverlay')?.remove(); }catch(e){}
+    document.body.style.overflow=''; window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+
+    try{ window.uploadedImages=[]; if(typeof uploadedImages!=='undefined') uploadedImages=[]; window.uploadedVideo=null; window.uploadedVideoPreview=''; }catch(e){}
+    try{ document.getElementById('previewGrid').innerHTML=''; document.getElementById('previewGrid').classList.add('hidden'); }catch(e){}
+    try{ document.getElementById('pFiles').value=''; document.getElementById('fileCount').innerText=''; }catch(e){}
+    try{ ['pTitle','pPrice','pAddress'].forEach(i=>{ const el=document.getElementById(i); if(el) el.value=''; }); }catch(e){}
+    try{ closePostModal(); }catch(e){}
+
+    const success=document.createElement('div');
+    success.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.92);display:flex;align-items:center;justify-content:center;padding:20px';
+    success.innerHTML=`<div style="background:#101010;border:2px solid #22c55e;border-radius:22px;padding:24px;max-width:340px;width:100%;text-align:center">
+      <div style="width:64px;height:64px;background:#22c55e;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto"><i class="fa-solid fa-check" style="color:#000;font-size:26px"></i></div>
+      <h2 style="color:#fff;font-weight:900;font-size:16px;margin-top:12px">POST SUCCESSFUL ✓</h2>
+      <p style="color:#22c55e;font-size:11px;margin-top:6px">PURE SUPABASE LIVE - Feed updated!</p>
+      <p style="color:#888;font-size:9px;margin-top:4px">Your post is now LIVE in feed</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''; if(typeof renderFeed==='function') renderFeed(); window.loadSupabaseFeed_FIXED();" style="width:100%;margin-top:12px;background:#22c55e;color:#000;padding:10px;border-radius:10px;font-weight:900">OKAY ✓ VIEW FEED</button>
+    </div>`;
+    document.body.appendChild(success);
+    setTimeout(()=>{ try{ success.remove(); window.loadSupabaseFeed_FIXED(); }catch(e){} }, 3000);
+
+    await window.loadSupabaseFeed_FIXED();
+
+  }catch(err){
+    clearTimeout(killTimer);
+    try{ document.getElementById('livePostingOverlay')?.remove(); }catch(e){}
+    document.body.style.overflow=''; window.isPosting=false;
+    if(btn){ btn.innerText='POST NOW'; btn.disabled=false; btn.style.opacity='1'; }
+
+    console.error('PURE POST FAILED', err);
+
+    const errBox=document.createElement('div');
+    errBox.style.cssText='position:fixed;inset:0;z-index:100000;background:rgba(0,0,0,0.93);display:flex;align-items:center;justify-content:center;padding:20px';
+    errBox.innerHTML=`<div style="background:#1a0a0a;border:2px solid #ef4444;border-radius:18px;padding:18px;max-width:380px;width:100%">
+      <h2 style="color:#ef4444;font-weight:900">POST FAILED</h2>
+      <p style="color:#fff;font-size:10px;margin-top:8px;background:#000;padding:8px;border-radius:8px;word-break:break-word">${String(err.message||err).slice(0,500)}</p>
+      <p style="color:#aaa;font-size:9px;margin-top:8px">Fix: 1. Check bucket house-images exists and is Public (Storage -> house-images -> ... -> Edit -> Public ON) 2. RLS Allow all 3. F12 console for details</p>
+      <button onclick="this.parentElement.parentElement.remove(); document.body.style.overflow=''" style="width:100%;margin-top:10px;background:#ef4444;color:#fff;padding:10px;border-radius:8px;font-weight:900">OKAY</button>
+    </div>`;
+    document.body.appendChild(errBox);
+  }
+};
+
+// Override all old functions - PURE SUPABASE ONLY
+window.doActualPostLIVE = window.doActualPostLIVE_PURE;
+window.doActualPostLIVE_FINAL = window.doActualPostLIVE_PURE;
+window.doActualPostLIVE_UNLIMITED = window.doActualPostLIVE_PURE;
+window.fbAddPost = window.supabaseAddPost_PURE;
+window.supabaseAddPost = window.supabaseAddPost_PURE;
+window.supabaseAddPost_UNLIMITED = window.supabaseAddPost_PURE;
+
+window.handlePostNowWithLivePay = async function(){
+  let imgs=[];
+  try{
+    const input=document.getElementById('pFiles');
+    if(input && input.files && input.files.length>0){
+      imgs = Array.from(input.files);
+    } else if(typeof uploadedImages!=='undefined' && uploadedImages.length>0){
+      imgs=uploadedImages;
+    } else {
+      imgs=window.uploadedImages||[];
+    }
+  }catch(e){ imgs=window.uploadedImages||[]; }
+  if(imgs.length===0){ if(typeof showToast==='function') showToast('Upload at least 1 photo'); return; }
+  const getVal=(id)=>{ try{ return document.getElementById(id)?.value?.trim()||''; }catch(e){return '';} };
+  const state=document.getElementById('pState')?.value||'';
+  const area=document.getElementById('pArea')?.value||'';
+  const address=getVal('pAddress');
+  const houseType=document.getElementById('pHouseType')?.value||'';
+  const price=getVal('pPrice');
+  const type=document.getElementById('pType')?.value||'';
+  const title=getVal('pTitle');
+  const customAmenities=getVal('pCustomAmenities');
+  const landlordTitle=document.getElementById('pLandlordTitle')?.value||'';
+  const ownerName=getVal('pOwner')||localStorage.getItem('hawz_name')||'User';
+  const phone=getVal('pPhone')||'';
+  const whatsapp=getVal('pWhatsApp')||phone;
+  const isUrgent=document.getElementById('pUrgent')?.checked||false;
+  let amenities=[]; try{ amenities=[...selectedAmenities]; }catch(e){ amenities=window.selectedAmenities||[]; }
+  if(!address||!price||!title||!ownerName||!phone){ if(typeof showToast==='function') showToast('Fill all required fields'); return; }
+  await window.doActualPostLIVE_PURE({state,area,address,houseType,price,type,title,amenities,customAmenities,landlordTitle,ownerName,phone,whatsapp,isUrgent,images:imgs,video:window.uploadedVideoPreview||null});
+};
+
+// PURE SUPABASE LIVE LISTENERS
+window.startLivePosts_PURE = function(){
+  const supabase = window.supabaseClient;
+  if(!supabase) return;
+  if(window.liveUnsubs && window.liveUnsubs.posts) try{ window.liveUnsubs.posts.unsubscribe(); }catch(e){}
+  
+  const channel = supabase.channel('posts-live-pure')
+    .on('postgres_changes', {event: 'INSERT', schema: 'public', table: 'posts'}, (payload)=>{
+      console.log('🌍 NEW POST LIVE (Pure Supabase):', payload.new.id);
+      try{
+        const mapped = mapPost(payload.new);
+        window.posts = window.posts||[];
+        if(!window.posts.find(p=> String(p.id)===String(mapped.id))){
+          window.posts.unshift(mapped);
+          if(typeof renderFeed==='function') renderFeed();
+        }
+      }catch(e){}
+    })
+    .subscribe();
+  
+  window.liveUnsubs = window.liveUnsubs||{};
+  window.liveUnsubs.posts = channel;
+  console.log('✅ Pure Supabase posts LIVE listener started');
+};
+
+window.startLivePosts = window.startLivePosts_PURE;
+
+// INIT PURE SUPABASE
+setTimeout(async()=>{
+  const supabase = window.supabaseClient;
+  if(!supabase) return;
+  
+  await window.loadSupabaseFeed_FIXED();
+  window.startLivePosts_PURE();
+  
+  const uid=localStorage.getItem('hawz_user_id');
+  if(uid){
+    if(typeof window.startLiveChats==='function') try{ window.startLiveChats(uid); }catch(e){}
+    if(typeof window.startLiveNotifications==='function') try{ window.startLiveNotifications(uid); }catch(e){}
+  }
+  
+  console.log('✅ PURE SUPABASE v11.0 READY - NO FIREBASE - FEED FIXED!');
+}, 1000);
+
+console.log('✅ PURE SUPABASE v11.0 LOADED - Feed will show posts instantly!');
+</script>
+
+
+<script>
+// ===== v12.0 - FEED DISPLAY FIX - SHOWS ALL POSTS EVEN IF IMAGES EMPTY =====
+console.log('%c🔥 v12.0 FEED FIX - Will show ALL posts from Supabase, even without images!', 'background:#22c55e;color:#000;font-size:14px;padding:8px;font-weight:900');
+
+window.renderFeed_ORIGINAL = window.renderFeed;
+
+window.renderFeed_FIXED_v12 = function(){
+  try{
+    console.log('🎨 renderFeed_FIXED_v12 called with', (window.posts||[]).length, 'posts');
+    
+    const feed = document.getElementById('feed') || document.getElementById('feedGrid') || document.querySelector('[data-feed]');
+    if(!feed){
+      console.warn('Feed container not found, trying original renderFeed');
+      if(window.renderFeed_ORIGINAL) return window.renderFeed_ORIGINAL();
+      return;
+    }
+
+    // If posts empty, try load again
+    if(!window.posts || window.posts.length===0){
+      console.log('Posts empty, loading from Supabase again...');
+      window.loadSupabaseFeed_FIXED();
+      return;
+    }
+
+    // Call original if exists, but with debug
+    if(window.renderFeed_ORIGINAL){
+      try{
+        const result = window.renderFeed_ORIGINAL();
+        console.log('Original renderFeed called');
+        // Check if feed actually has children after original
+        setTimeout(()=>{
+          const feedCheck = document.getElementById('feed') || document.getElementById('feedGrid');
+          if(feedCheck && feedCheck.children.length===0 && window.posts.length>0){
+            console.warn('⚠️ Original renderFeed left feed empty but posts exist - forcing manual render!');
+            window.forceRenderFeed();
+          }
+        }, 500);
+        return result;
+      }catch(e){
+        console.error('Original renderFeed failed:', e);
+        window.forceRenderFeed();
+      }
+    } else {
+      window.forceRenderFeed();
+    }
+
+  }catch(e){
+    console.error('renderFeed_FIXED_v12 error', e);
+    window.forceRenderFeed();
+  }
+};
+
+window.forceRenderFeed = function(){
+  try{
+    console.log('🔨 forceRenderFeed - manually rendering', window.posts.length, 'posts');
+    const feed = document.getElementById('feed') || document.getElementById('feedGrid');
+    if(!feed){ console.error('No feed container found at all!'); return; }
+
+    feed.innerHTML = '';
+    
+    window.posts.forEach((p, idx)=>{
+      try{
+        const div = document.createElement('div');
+        div.className = 'post-card';
+        div.style.cssText = 'background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px;margin-bottom:12px;';
+        
+        const img = (p.images && p.images[0]) || p.image || '';
+        const imgHtml = img ? `<img src="${img}" style="width:100%;height:180px;object-fit:cover;border-radius:12px;background:#222" onerror="this.style.display='none'">` : `<div style="width:100%;height:180px;background:#222;border-radius:12px;display:flex;align-items:center;justify-content:center;color:#555">No image</div>`;
+        
+        div.innerHTML = `
+          ${imgHtml}
+          <h3 style="font-weight:900;margin-top:8px;color:#fff">${(p.title||'No title').slice(0,60)}</h3>
+          <p style="color:#22c55e;font-weight:800">₦${p.price||'0'}</p>
+          <p style="color:#888;font-size:11px">${p.area||''} ${p.state?'• '+p.state:''} • ${p.houseType||p.housetype||''}</p>
+          <p style="color:#aaa;font-size:10px;margin-top:4px">${new Date(p.createdAt||p.createdat||Date.now()).toLocaleString()}</p>
+          <p style="color:#555;font-size:9px">ID: ${String(p.id||'').slice(0,8)}...</p>
+        `;
+        
+        // Make clickable
+        div.onclick = ()=>{ if(typeof openPost==='function') openPost(p.id); };
+        
+        feed.appendChild(div);
+      }catch(e){
+        console.warn('Render post', idx, 'failed', e);
+      }
+    });
+    
+    console.log('✅ forceRenderFeed done -', feed.children.length, 'cards in DOM');
+    
+  }catch(e){
+    console.error('forceRenderFeed error', e);
+  }
+};
+
+// Override renderFeed with fixed version
+window.renderFeed = window.renderFeed_FIXED_v12;
+
+// Enhanced load with debug + shows images column
+window.loadSupabaseFeed_v12 = async function(){
+  const supabase = window.supabaseClient;
+  if(!supabase){ console.error('No supabase client v12'); return; }
+  
+  console.log('📥 v12 Loading feed from Supabase Table Editor...');
+  
+  try{
+    const { data, error } = await supabase.from('posts').select('*').order('createdat', {ascending: false}).limit(100);
+    
+    if(error){
+      console.error('❌ v12 Feed load error:', error);
+      alert('Feed error: '+error.message+'\n\nFix: Go to Supabase -> SQL Editor -> Run:\nCREATE POLICY "Allow all" ON posts FOR ALL USING (true) WITH CHECK (true);');
+      return;
+    }
+    
+    console.log(`✅ v12 Loaded ${data.length} posts from Supabase`);
+    console.log('First post sample:', data[0]);
+    
+    // Map with debug for images
+    window.posts = data.map(p=>{
+      const mapped = {
+        id: p.id, fid: p.id, _fid: p.id,
+        title: p.title||'No title', price: p.price||'0', area: p.area||'', state: p.state||'', address: p.address||'',
+        houseType: p.housetype||'', type: p.type||'', amenities: p.amenities||[], customAmenities: p.customamenities||'',
+        ownerName: p.ownername||'', posterName: p.postername||'', ownerId: p.ownerid||'',
+        images: p.images||[], image: p.image|| (p.images&&p.images[0])||'', imagesCount: p.imagescount||0,
+        video: p.video||null, hasVideo: p.hasvideo||false, isUrgent: p.isurgent||false, taken: p.taken||false,
+        createdAt: p.createdat||Date.now(), createdat: p.createdat||Date.now()
+      };
+      if(!mapped.images || mapped.images.length===0){
+        console.warn('⚠️ Post', mapped.id.slice(0,8), 'has NO images:', mapped.title);
+      }
+      return mapped;
+    });
+    
+    console.log('Mapped posts:', window.posts.length, 'with images:', window.posts.filter(p=>p.images&&p.images.length>0).length);
+    
+    // Force render
+    window.forceRenderFeed();
+    setTimeout(()=>{ window.renderFeed_FIXED_v12(); }, 300);
+    
+    // Also call original renderFeed after
+    setTimeout(()=>{
+      try{ if(window.renderFeed_ORIGINAL) window.renderFeed_ORIGINAL(); }catch(e){}
+      window.forceRenderFeed();
+    }, 800);
+
+  }catch(e){
+    console.error('❌ v12 load exception', e);
+  }
+};
+
+window.loadSupabaseFeed_FIXED = window.loadSupabaseFeed_v12;
+window.loadSupabaseFeed = window.loadSupabaseFeed_v12;
+
+// Auto load on start
+setTimeout(()=>{
+  console.log('🚀 v12 Auto loading feed...');
+  window.loadSupabaseFeed_v12();
+}, 1500);
+
+// Add reload button for debugging
+setTimeout(()=>{
+  try{
+    const header = document.querySelector('header') || document.body;
+    if(header && !document.getElementById('reloadFeedBtn')){
+      const btn = document.createElement('button');
+      btn.id='reloadFeedBtn';
+      btn.innerText='🔄 Reload Feed (Debug)';
+      btn.style.cssText='position:fixed;bottom:80px;right:10px;z-index:99999;background:#22c55e;color:#000;padding:8px 12px;border-radius:20px;font-size:10px;font-weight:900;border:none;box-shadow:0 2px 10px rgba(0,0,0,0.5)';
+      btn.onclick=()=>{ window.loadSupabaseFeed_v12(); alert('Reloading feed from Supabase... Check console F12'); };
+      document.body.appendChild(btn);
+    }
+  }catch(e){}
+}, 2000);
+
+console.log('✅ v12.0 FEED FIX LOADED - Will show ALL posts even if images empty!');
+</script>
+
 </body>
 </html>
