@@ -382,7 +382,7 @@ window.sendChat = function(ownerId, ownerName, postId){
     if(window.fbAddChat) window.fbAddChat(msg);
     // Save locally as backup
     try{ window.chats = window.chats||[]; window.chats.push(msg); localStorage.setItem('hawz_chats_'+uid, JSON.stringify(window.chats.slice(-200))); }catch(e){}
-    if(typeof showToast==='function') showToast('Chat Sent LIVE ✓');
+    if(typeof showToast==='function') showToast('Chat Sent ✓');
   }catch(e){ console.warn('sendChat override fail', e); if(_origSendChat) return _origSendChat(ownerId, ownerName, postId); }
 };
 
