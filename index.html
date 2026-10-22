@@ -5435,6 +5435,132 @@ setTimeout(()=>{
 
 console.log('✅ FINAL CLEAN v10.0 LOADED - No hacking, chat both ways LIVE, dot only on NEW, stays still if no new after login');
 </script>
+
+<script>
+// ===== REMOVE IMAGINATION LOGIN - PROFESSIONAL STEP 1 - NO LOGIN REQUIRED TO VIEW FEED =====
+console.log('%c🔥 REMOVING IMAGINATION LOGIN - Feed will show WITHOUT login, like Facebook/Instagram!', 'background:#22c55e;color:#000;font-size:13px;padding:8px;font-weight:900');
+
+(function(){
+  // Auto-create professional user if not exists (temporary until Step 2 real auth)
+  try{
+    if(!localStorage.getItem('hawz_user_id')){
+      const uid = 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+      localStorage.setItem('hawz_user_id', uid);
+      localStorage.setItem('hawz_name', 'Guest User');
+      localStorage.setItem('hawz_phone', '0000000000');
+      localStorage.setItem('hawz_area', 'Port Harcourt');
+      localStorage.setItem('hawz_state', 'Rivers');
+      console.log('✅ Auto-created temporary user for Step 1:', uid);
+    }
+  }catch(e){}
+
+  // Hide/remove login modal completely
+  function removeLoginModals(){
+    try{
+      // Find all elements that contain "Login To Continue"
+      const allElements = document.querySelectorAll('*');
+      for(let el of allElements){
+        if(el.textContent && el.textContent.includes('Login To Continue') && el.children.length < 10){
+          // Check if it's a modal overlay
+          let parent = el.closest('div');
+          let count = 0;
+          while(parent && count < 5){
+            const style = window.getComputedStyle(parent);
+            if(style.position==='fixed' || style.position==='absolute' || parent.classList.contains('fixed') || parent.style.zIndex>100){
+              console.log('🔥 Removing imagination login modal:', parent);
+              parent.style.display='none';
+              parent.remove();
+              break;
+            }
+            parent = parent.parentElement;
+            count++;
+          }
+        }
+      }
+
+      // Also hide by common IDs/classes
+      const selectors = [
+        '#loginModal', '#loginToContinue', '.login-modal', '[data-login]',
+        'div[class*="login"][class*="fixed"]', 'div[class*="Login"][class*="fixed"]'
+      ];
+      selectors.forEach(sel=>{
+        try{
+          document.querySelectorAll(sel).forEach(el=>{
+            if(el.textContent && el.textContent.includes('Login To Continue')){
+              el.style.display='none';
+              el.remove();
+            }
+          });
+        }catch(e){}
+      });
+
+      // Remove any overlay that blocks feed
+      document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"]').forEach(el=>{
+        try{
+          if(el.textContent.includes('Login To Continue') || el.textContent.includes('LOGIN TO APP')){
+            el.style.display='none';
+            el.remove();
+          }
+        }catch(e){}
+      });
+
+      // Ensure body overflow is restored
+      document.body.style.overflow='';
+      document.documentElement.style.overflow='';
+
+    }catch(e){
+      console.warn('removeLoginModals error', e);
+    }
+  }
+
+  // Run immediately and repeatedly until login is gone
+  removeLoginModals();
+  setTimeout(removeLoginModals, 500);
+  setTimeout(removeLoginModals, 1500);
+  setTimeout(removeLoginModals, 3000);
+
+  // Override any function that shows login modal
+  window.showLoginModal = function(){ console.log('🔇 showLoginModal blocked - imagination login removed for Step 1'); return false; };
+  window.openLoginModal = function(){ console.log('🔇 openLoginModal blocked'); return false; };
+  window.requireLogin = function(){ console.log('🔇 requireLogin blocked - feed does not need login in Step 1'); return true; };
+  window.checkLogin = function(){ return true; };
+
+  // Auto-load feed without login
+  setTimeout(()=>{
+    try{
+      removeLoginModals();
+      if(window.loadSupabasePosts){
+        console.log('🚀 Loading feed WITHOUT login (professional, like Instagram)...');
+        window.loadSupabasePosts();
+      }
+      if(window.renderFeed){
+        window.renderFeed();
+      }
+    }catch(e){}
+  }, 1000);
+
+  console.log('✅ Imagination login REMOVED - Feed shows without login, like Facebook/Instagram! Step 2 will add REAL login (Supabase Auth)');
+})();
+
+// Override post modal to allow posting even as Guest (Step 1), Step 2 will require real auth
+(function(){
+  const originalOpenPostModal = window.openPostModal;
+  window.openPostModal = function(){
+    try{
+      // Ensure user exists
+      if(!localStorage.getItem('hawz_user_id')){
+        const uid = 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+        localStorage.setItem('hawz_user_id', uid);
+        localStorage.setItem('hawz_name', 'Guest User');
+      }
+      if(originalOpenPostModal) return originalOpenPostModal();
+    }catch(e){
+      console.error('openPostModal error', e);
+    }
+  };
+})();
+</script>
+
 </body>
 </html><script>
 const nigeriaStates={
@@ -11210,5 +11336,131 @@ setTimeout(()=>{
 
 console.log('✅ FINAL CLEAN v10.0 LOADED - No hacking, chat both ways LIVE, dot only on NEW, stays still if no new after login');
 </script>
+
+<script>
+// ===== REMOVE IMAGINATION LOGIN - PROFESSIONAL STEP 1 - NO LOGIN REQUIRED TO VIEW FEED =====
+console.log('%c🔥 REMOVING IMAGINATION LOGIN - Feed will show WITHOUT login, like Facebook/Instagram!', 'background:#22c55e;color:#000;font-size:13px;padding:8px;font-weight:900');
+
+(function(){
+  // Auto-create professional user if not exists (temporary until Step 2 real auth)
+  try{
+    if(!localStorage.getItem('hawz_user_id')){
+      const uid = 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+      localStorage.setItem('hawz_user_id', uid);
+      localStorage.setItem('hawz_name', 'Guest User');
+      localStorage.setItem('hawz_phone', '0000000000');
+      localStorage.setItem('hawz_area', 'Port Harcourt');
+      localStorage.setItem('hawz_state', 'Rivers');
+      console.log('✅ Auto-created temporary user for Step 1:', uid);
+    }
+  }catch(e){}
+
+  // Hide/remove login modal completely
+  function removeLoginModals(){
+    try{
+      // Find all elements that contain "Login To Continue"
+      const allElements = document.querySelectorAll('*');
+      for(let el of allElements){
+        if(el.textContent && el.textContent.includes('Login To Continue') && el.children.length < 10){
+          // Check if it's a modal overlay
+          let parent = el.closest('div');
+          let count = 0;
+          while(parent && count < 5){
+            const style = window.getComputedStyle(parent);
+            if(style.position==='fixed' || style.position==='absolute' || parent.classList.contains('fixed') || parent.style.zIndex>100){
+              console.log('🔥 Removing imagination login modal:', parent);
+              parent.style.display='none';
+              parent.remove();
+              break;
+            }
+            parent = parent.parentElement;
+            count++;
+          }
+        }
+      }
+
+      // Also hide by common IDs/classes
+      const selectors = [
+        '#loginModal', '#loginToContinue', '.login-modal', '[data-login]',
+        'div[class*="login"][class*="fixed"]', 'div[class*="Login"][class*="fixed"]'
+      ];
+      selectors.forEach(sel=>{
+        try{
+          document.querySelectorAll(sel).forEach(el=>{
+            if(el.textContent && el.textContent.includes('Login To Continue')){
+              el.style.display='none';
+              el.remove();
+            }
+          });
+        }catch(e){}
+      });
+
+      // Remove any overlay that blocks feed
+      document.querySelectorAll('div[style*="position: fixed"], div[style*="position:fixed"]').forEach(el=>{
+        try{
+          if(el.textContent.includes('Login To Continue') || el.textContent.includes('LOGIN TO APP')){
+            el.style.display='none';
+            el.remove();
+          }
+        }catch(e){}
+      });
+
+      // Ensure body overflow is restored
+      document.body.style.overflow='';
+      document.documentElement.style.overflow='';
+
+    }catch(e){
+      console.warn('removeLoginModals error', e);
+    }
+  }
+
+  // Run immediately and repeatedly until login is gone
+  removeLoginModals();
+  setTimeout(removeLoginModals, 500);
+  setTimeout(removeLoginModals, 1500);
+  setTimeout(removeLoginModals, 3000);
+
+  // Override any function that shows login modal
+  window.showLoginModal = function(){ console.log('🔇 showLoginModal blocked - imagination login removed for Step 1'); return false; };
+  window.openLoginModal = function(){ console.log('🔇 openLoginModal blocked'); return false; };
+  window.requireLogin = function(){ console.log('🔇 requireLogin blocked - feed does not need login in Step 1'); return true; };
+  window.checkLogin = function(){ return true; };
+
+  // Auto-load feed without login
+  setTimeout(()=>{
+    try{
+      removeLoginModals();
+      if(window.loadSupabasePosts){
+        console.log('🚀 Loading feed WITHOUT login (professional, like Instagram)...');
+        window.loadSupabasePosts();
+      }
+      if(window.renderFeed){
+        window.renderFeed();
+      }
+    }catch(e){}
+  }, 1000);
+
+  console.log('✅ Imagination login REMOVED - Feed shows without login, like Facebook/Instagram! Step 2 will add REAL login (Supabase Auth)');
+})();
+
+// Override post modal to allow posting even as Guest (Step 1), Step 2 will require real auth
+(function(){
+  const originalOpenPostModal = window.openPostModal;
+  window.openPostModal = function(){
+    try{
+      // Ensure user exists
+      if(!localStorage.getItem('hawz_user_id')){
+        const uid = 'user_' + Date.now() + '_' + Math.random().toString(36).slice(2,8);
+        localStorage.setItem('hawz_user_id', uid);
+        localStorage.setItem('hawz_name', 'Guest User');
+      }
+      if(originalOpenPostModal) return originalOpenPostModal();
+    }catch(e){
+      console.error('openPostModal error', e);
+    }
+  };
+})();
+</script>
+
 </body>
 </html>
