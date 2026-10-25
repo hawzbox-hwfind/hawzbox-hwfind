@@ -1156,12 +1156,13 @@ function handleSearch(q){
     const lower = q.toLowerCase();
     const filtered = posts.filter(p=> (p.title||'').toLowerCase().includes(lower) || (p.location||'').toLowerCase().includes(lower) || (p.address||'').toLowerCase().includes(lower) || (p.area||'').toLowerCase().includes(lower) || (p.price||'').toLowerCase().includes(lower));
     currentPostsCache = filtered;
-    document.getElementById('allGrid').innerHTML=(filtered.length?filtered.map(cardHTML).join(''):`<div class="col-span-2 py-16 text-center"><div class="w-16 h-16 bg-[#161616] rounded-full flex items-center justify-center mx-auto mb-4"><i class="fa-solid fa-magnifying-glass text-zinc-600 text-xl"></i></div><p class="font-semibold">No results for "${q}"</p><p class="text-[12px] text-zinc-500 mt-2">Try different keywords or check spelling</p><button onclick="const searchInputEl = document.getElementById('searchInput'); if(searchInputEl){ searchInputEl.addEventListener('input', (e)=> handleSearch(e.target.value)); }
-// Old: document.getElementById('searchInput').value=''; currentPostsCache=[...posts]; renderAll();" class="mt-4 bg-[#1E1E1E] border border-[#2A2A2A] text-white px-5 py-2.5 rounded-full text-[12px]">Clear search</button></div>`);
+    document.getElementById('allGrid').innerHTML=(filtered.length?filtered.map(cardHTML).join(''):`<div class="col-span-2 py-16 text-center"><div class="w-16 h-16 bg-[#161616] rounded-full flex items-center justify-center mx-auto mb-4"><i class="fa-solid fa-magnifying-glass text-zinc-600 text-xl"></i></div><p class="font-semibold">No results for "${q}"</p><p class="text-[12px] text-zinc-500 mt-2">Try different keywords or check spelling</p><button onclick="document.getElementById('searchInput').value=''; currentPostsCache=[...posts]; renderAll();" class="mt-4 bg-[#1E1E1E] border border-[#2A2A2A] text-white px-5 py-2.5 rounded-full text-[12px]">Clear search</button></div>`);
+    if(filtered.length>0) showToast(`${filtered.length} results for "${q}"`);
+}, 300);
+}
     if(filtered.length>0) showToast(`${filtered.length} results for "${q}"`);
   }, 300);
 }
-// Voice search - professional with Web Speech API
 function startVoiceSearch(){
   const btn = document.getElementById('voiceBtn');
   const input = document.getElementById('searchInput');
@@ -1373,7 +1374,7 @@ window.selectListingType = (type) => {
 document.addEventListener('click',(e)=>{const menu=document.getElementById('moreMenu'); const btn=document.getElementById('moreBtn'); if(menu && btn && !menu.contains(e.target) && !btn.contains(e.target)) menu.classList.add('hidden');});
 
 window.startVoiceSearch = () => {
-  const btn = document.getElementById('voiceBtn'); const input = const searchInputEl = document.getElementById('searchInput'); if(searchInputEl){ searchInputEl.addEventListener('input', (e)=> handleSearch(e.target.value)); }
+  const btn = document.getElementById('voiceBtn'); const input = document.getElementById('searchInput');
 // Old: document.getElementById('searchInput');
   if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) { showToast('Voice not supported'); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition; const rec = new SR();
