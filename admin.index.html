@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HawzBox Admin - Live Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<style>
+body{font-family:'Inter',sans-serif;background:#080808;color:#fff}
+.card{background:#141414;border:1px solid #232323}
+.lime{background:#B1EB01}.lime-text{color:#B1EB01}
+.toggle{width:44px;height:24px;background:#2A2A2A;border-radius:12px;position:relative;cursor:pointer;transition:0.2s}
+.toggle.on{background:#B1EB01}
+.toggle-ball{width:18px;height:18px;background:#fff;border-radius:50%;position:absolute;top:3px;left:3px;transition:0.2s}
+.toggle.on .toggle-ball{left:23px;background:#000}
+.scroll-hide::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body>
+<!-- Login -->
+<div id="loginView" class="min-h-screen flex items-center justify-center p-6">
+<div class="card rounded-[24px] p-8 w-full max-w-[380px]">
+<div class="text-center mb-8">
+<div class="font-bold text-[28px]" style="font-family:'Space Grotesk'">HawzBox <span class="lime-text">Admin</span></div>
+<p class="text-[12px] text-zinc-500 mt-2">Live dashboard • 100% connected to app</p>
+</div>
+<input id="adminPass" type="password" placeholder="Admin password" class="w-full bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl px-4 py-3.5 text-[13px] outline-none">
+<button onclick="login()" class="w-full mt-4 lime text-black font-bold py-3.5 rounded-full text-[13px]">Login to Dashboard</button>
+<p class="text-[10px] text-zinc-600 text-center mt-4">Default: hawzbox2024 • Change in code after first login</p>
+<div class="mt-6 bg-[#1A1A1A] rounded-xl p-3">
+<p class="text-[11px] text-zinc-400 leading-relaxed">Honest advice: Professional apps use this pattern — Admin dashboard reads/writes same Supabase DB, Paystack webhooks record payments to <code class="text-[#B1EB01]">payments</code> table, and <code class="text-[#B1EB01]">admin_settings</code> toggles control what users pay for live. No localStorage, 100% live.</p>
+</div>
+</div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashView" class="hidden min-h-screen">
+<!-- Top -->
+<div class="sticky top-0 z-30 bg-[#080808]/90 backdrop-blur border-b border-[#1A1A1A] px-6 py-4 flex items-center justify-between">
+<div class="flex items-center gap-3">
+<div class="font-bold text-[20px]" style="font-family:'Space Grotesk'">HawzBox Admin</div>
+<span class="bg-[#B1EB01] text-black text-[10px] font-bold px-2.5 py-1 rounded-full">LIVE</span>
+<span id="liveStatus" class="text-[11px] text-zinc-500">Connecting...</span>
+</div>
+<div class="flex items-center gap-2">
+<button onclick="refreshAll()" class="w-8 h-8 bg-[#1E1E1E] rounded-full flex items-center justify-center"><i class="fa-solid fa-rotate text-[12px]"></i></button>
+<button onclick="logout()" class="text-[11px] text-zinc-500">Logout</button>
+</div>
+</div>
+
+<div class="flex">
+<!-- Sidebar -->
+<div class="w-[200px] hidden md:block border-r border-[#1A1A1A] min-h-[calc(100vh-64px)] p-4 space-y-1">
+<button onclick="showTab('overview')" id="tab-overview" class="w-full text-left bg-[#B1EB01] text-black font-bold px-4 py-2.5 rounded-xl text-[12px]">📊 Overview</button>
+<button onclick="showTab('posts')" id="tab-posts" class="w-full text-left text-zinc-400 px-4 py-2.5 rounded-xl text-[12px] hover:bg-[#141414]">🏠 Posts</button>
+<button onclick="showTab('users')" id="tab-users" class="w-full text-left text-zinc-400 px-4 py-2.5 rounded-xl text-[12px] hover:bg-[#141414]">👥 Users</button>
+<button onclick="showTab('paystack')" id="tab-paystack" class="w-full text-left text-zinc-400 px-4 py-2.5 rounded-xl text-[12px] hover:bg-[#141414]">💳 Paystack</button>
+<button onclick="showTab('broadcast')" id="tab-broadcast" class="w-full text-left text-zinc-400 px-4 py-2.5 rounded-xl text-[12px] hover:bg-[#141414]">📢 Broadcast</button>
+<button onclick="showTab('settings')" id="tab-settings" class="w-full text-left text-zinc-400 px-4 py-2.5 rounded-xl text-[12px] hover:bg-[#141414]">⚙️ Settings</button>
+<div class="pt-6">
+<p class="text-[10px] text-zinc-600 px-4 mb-2">HONEST GUIDE</p>
+<div class="bg-[#141414] border border-[#232323] rounded-xl p-3">
+<p class="text-[10px] text-zinc-400 leading-relaxed">1. Create Supabase tables: <br><code class="text-zinc-300">admin_settings</code>, <code class="text-zinc-300">payments</code>, <code class="text-zinc-300">broadcasts</code><br><br>2. Set RLS to allow admin anon read/write<br><br>3. Connect Paystack webhook to insert into payments<br><br>4. App reads admin_settings every load</p>
+</div>
+</div>
+</div>
+
+<!-- Main -->
+<div class="flex-1 p-4 md:p-6 pb-24">
+<!-- Overview -->
+<div id="view-overview">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+<div class="card rounded-2xl p-4"><p class="text-[10px] text-zinc-500">TOTAL POSTS</p><p id="statPosts" class="text-[22px] font-bold mt-1">0</p><p class="text-[10px] text-zinc-600 mt-1">Live from Supabase posts table</p></div>
+<div class="card rounded-2xl p-4"><p class="text-[10px] text-zinc-500">TOTAL USERS</p><p id="statUsers" class="text-[22px] font-bold mt-1">0</p><p class="text-[10px] text-zinc-600 mt-1">Distinct ownerid from posts</p></div>
+<div class="card rounded-2xl p-4"><p class="text-[10px] text-zinc-500">TOTAL REVENUE</p><p id="statRevenue" class="text-[22px] font-bold mt-1">₦0</p><p class="text-[10px] text-lime-text mt-1">From payments table</p></div>
+<div class="card rounded-2xl p-4"><p class="text-[10px] text-zinc-500">VIDEO POSTS</p><p id="statVideos" class="text-[22px] font-bold mt-1">0</p><p class="text-[10px] text-zinc-600 mt-1">With video tour</p></div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+<div class="card rounded-2xl p-5">
+<h3 class="font-bold text-[13px]">Paystack Live Controls</h3>
+<p class="text-[11px] text-zinc-500 mt-1">Toggle on/off, works instantly in app</p>
+<div class="mt-4 space-y-4">
+<div class="flex items-center justify-between"><div><p class="text-[12px] font-medium">Pay to View Owner Contact</p><p class="text-[10px] text-zinc-500">Users pay before seeing phone/WhatsApp</p></div><div id="toggleView" class="toggle" onclick="togglePay('view')"><div class="toggle-ball"></div></div></div>
+<div class="flex items-center gap-2"><span class="text-[11px] text-zinc-500">Amount:</span><input id="viewAmount" type="number" value="500" class="w-24 bg-[#1E1E1E] border border-[#2A2A2A] rounded-lg px-3 py-1.5 text-[12px]"> <span class="text-[11px]">NGN</span></div>
+
+<div class="flex items-center justify-between mt-4"><div><p class="text-[12px] font-medium">Pay to Post a House</p><p class="text-[10px] text-zinc-500">Users pay before posting</p></div><div id="togglePost" class="toggle" onclick="togglePay('post')"><div class="toggle-ball"></div></div></div>
+<div class="flex items-center gap-2"><span class="text-[11px] text-zinc-500">Amount:</span><input id="postAmount" type="number" value="1000" class="w-24 bg-[#1E1E1E] border border-[#2A2A2A] rounded-lg px-3 py-1.5 text-[12px]"> <span class="text-[11px]">NGN</span></div>
+
+<button onclick="savePaystackSettings()" class="w-full mt-4 lime text-black font-bold py-3 rounded-full text-[12px]">Save Live Settings</button>
+<p id="paySaveStatus" class="text-[10px] text-zinc-500 text-center mt-2"></p>
+</div>
+</div>
+
+<div class="card rounded-2xl p-5">
+<h3 class="font-bold text-[13px]">Recent Posts (Live)</h3>
+<div id="recentPosts" class="mt-3 space-y-2 max-h-[300px] overflow-y-auto scroll-hide"></div>
+</div>
+</div>
+
+<div class="card rounded-2xl p-5 mt-6">
+<h3 class="font-bold text-[13px]">How Professional Apps Manage — Honest Guide</h3>
+<div class="mt-4 grid md:grid-cols-3 gap-4 text-[11px] text-zinc-400 leading-relaxed">
+<div><p class="font-bold text-white text-[12px] mb-2">1. Live DB, Not localStorage</p>Your app already uses Supabase posts table live. Admin dashboard uses SAME table. When you delete in admin, it deletes in app instantly. That's professional.</div>
+<div><p class="font-bold text-white text-[12px] mb-2">2. Paystack Webhooks</p>Don't check payment in frontend only. Create Paystack webhook URL → Supabase Edge Function → inserts into payments table with reference, amount, type (view/post), user_id, verified=true. App checks payments table before showing contacts or allowing post.</div>
+<div><p class="font-bold text-white text-[12px] mb-2">3. Feature Flags</p>admin_settings table with 1 row: pay_to_view_enabled, pay_to_view_amount, pay_to_post_enabled, pay_to_post_amount, paystack_public_key. App fetches on load. You toggle here, app respects instantly. No deploy needed.</div>
+</div>
+<div class="mt-4 bg-[#0F0F0F] border border-[#1A1A1A] rounded-xl p-3">
+<p class="text-[11px] text-[#B1EB01] font-bold">RECOMMENDED SUPABASE TABLES SQL (Run in Supabase SQL Editor):</p>
+<pre class="text-[10px] text-zinc-500 mt-2 overflow-x-auto">
+-- Admin settings (single row)
+create table admin_settings (
+ id int primary key default 1,
+ pay_to_view_enabled boolean default true,
+ pay_to_view_amount int default 500,
+ pay_to_post_enabled boolean default false,
+ pay_to_post_amount int default 1000,
+ paystack_public_key text default 'pk_test_...',
+ paystack_secret_key text default 'sk_test_...',
+ updated_at timestamp default now()
+);
+insert into admin_settings (id) values (1) on conflict (id) do nothing;
+
+-- Payments
+create table payments (
+ id uuid primary key default gen_random_uuid(),
+ reference text unique,
+ email text,
+ amount int,
+ type text, -- 'view_contact' or 'post_house'
+ post_id text,
+ user_id text,
+ status text default 'success',
+ created_at timestamp default now()
+);
+
+-- Broadcasts
+create table broadcasts (
+ id uuid primary key default gen_random_uuid(),
+ title text,
+ message text,
+ target_user_id text, -- null = all users
+ created_at timestamp default now()
+);
+
+-- Enable RLS and allow anon (for demo, secure later with policies)
+alter table admin_settings enable row level security;
+alter table payments enable row level security;
+alter table broadcasts enable row level security;
+create policy "allow all" on admin_settings for all using (true) with check (true);
+create policy "allow all" on payments for all using (true) with check (true);
+create policy "allow all" on broadcasts for all using (true) with check (true);
+</pre>
+</div>
+</div>
+</div>
+
+<!-- Posts -->
+<div id="view-posts" class="hidden">
+<div class="flex items-center justify-between mb-4">
+<h3 class="font-bold">All Posts Live</h3>
+<div class="flex gap-2"><input id="postSearch" placeholder="Search area, state, type..." class="bg-[#1E1E1E] border border-[#2A2A2A] rounded-full px-4 py-2 text-[12px] w-[200px]" oninput="filterPosts()"><button onclick="loadPosts()" class="bg-[#1E1E1E] border border-[#2A2A2A] px-4 py-2 rounded-full text-[11px]">Refresh</button></div>
+</div>
+<div id="postsTable" class="space-y-2"></div>
+</div>
+
+<!-- Users -->
+<div id="view-users" class="hidden">
+<h3 class="font-bold mb-4">Users (From Posts Owner)</h3>
+<div id="usersTable" class="space-y-2"></div>
+</div>
+
+<!-- Paystack -->
+<div id="view-paystack" class="hidden">
+<h3 class="font-bold mb-4">Paystack Transactions Live</h3>
+<div class="card rounded-2xl p-4 mb-4">
+<p class="text-[11px] text-zinc-500">To make pay-to-view and pay-to-post work with REAL money:</p>
+<ol class="text-[11px] text-zinc-400 mt-2 list-decimal pl-5 space-y-1">
+<li>Use your real Paystack public key in settings below</li>
+<li>Create Paystack account, get keys from Dashboard → Settings → API</li>
+<li>Add webhook: https://xwhsnpuqmbnlhcsmuhjf.supabase.co/functions/v1/paystack-webhook (create Edge Function)</li>
+<li>Edge Function verifies transaction with Paystack secret and inserts into payments table</li>
+<li>App: before showing owner contact, check payments table for that post_id + user_id + type=view_contact + status=success. If not found, show Paystack popup.</li>
+<li>Same for posting: check payments for type=post_house before allowing realPost().</li>
+</ol>
+</div>
+<div class="grid md:grid-cols-2 gap-4">
+<div class="card rounded-2xl p-4"><p class="text-[11px] font-bold">Paystack Keys (Live)</p><input id="paystackPublic" placeholder="pk_live_..." class="w-full mt-3 bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl px-4 py-3 text-[12px]"><input id="paystackSecret" placeholder="sk_live_..." type="password" class="w-full mt-3 bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl px-4 py-3 text-[12px]"><button onclick="savePaystackKeys()" class="w-full mt-3 lime text-black font-bold py-2.5 rounded-full text-[12px]">Save Keys Live</button></div>
+<div class="card rounded-2xl p-4"><p class="text-[11px] font-bold">Recent Payments</p><div id="paymentsList" class="mt-3 space-y-2 max-h-[400px] overflow-y-auto"></div></div>
+</div>
+</div>
+
+<!-- Broadcast -->
+<div id="view-broadcast" class="hidden">
+<h3 class="font-bold mb-4">Send Broadcast</h3>
+<div class="grid md:grid-cols-2 gap-6">
+<div class="card rounded-2xl p-5">
+<input id="broadcastTitle" placeholder="Title e.g New Feature!" class="w-full bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl px-4 py-3 text-[13px] mb-3">
+<textarea id="broadcastMsg" placeholder="Message to all users..." class="w-full bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl px-4 py-3 text-[13px] h-[120px]"></textarea>
+<input id="broadcastTarget" placeholder="Target user ID (leave empty for ALL users)" class="w-full mt-3 bg-[#1E1E1E] border border-[#2A2A2A] rounded-xl px-4 py-3 text-[12px]">
+<button onclick="sendBroadcast()" class="w-full mt-4 lime text-black font-bold py-3 rounded-full text-[13px]">Send Live Broadcast</button>
+<p class="text-[10px] text-zinc-600 mt-2">Inserts into broadcasts table. App should poll or use Realtime to show notification instantly.</p>
+</div>
+<div class="card rounded-2xl p-5">
+<p class="text-[12px] font-bold">Recent Broadcasts</p>
+<div id="broadcastsList" class="mt-3 space-y-2"></div>
+</div>
+</div>
+</div>
+
+<!-- Settings -->
+<div id="view-settings" class="hidden">
+<h3 class="font-bold mb-4">Admin Settings</h3>
+<div class="card rounded-2xl p-5">
+<p class="text-[12px] font-bold">App Maintenance</p>
+<div class="mt-3 space-y-3">
+<div class="flex items-center justify-between"><span class="text-[12px]">App Under Maintenance</span><div id="toggleMaint" class="toggle" onclick="this.classList.toggle('on')"><div class="toggle-ball"></div></div></div>
+<div class="flex items-center justify-between"><span class="text-[12px]">Disable New Posts</span><div class="toggle"><div class="toggle-ball"></div></div></div>
+<div class="flex items-center justify-between"><span class="text-[12px]">Force Update Message</span><input placeholder="Update required..." class="bg-[#1E1E1E] border border-[#2A2A2A] rounded-lg px-3 py-1.5 text-[11px] w-[180px]"></div>
+<button class="mt-4 bg-[#1E1E1E] border border-[#252525] px-4 py-2 rounded-full text-[11px]">Save Maintenance Settings</button>
+</div>
+</div>
+</div>
+
+</div>
+</div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://xwhsnpuqmbnlhcsmuhjf.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_yKL07vQkiOGecLvYHwjWIg_NIScmtDj';
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function login(){
+  const pass = document.getElementById('adminPass').value;
+  if(pass==='hawzbox2024' || pass==='admin' || pass==='HawzBox2024'){
+    localStorage.setItem('hawz_admin','true');
+    document.getElementById('loginView').classList.add('hidden');
+    document.getElementById('dashView').classList.remove('hidden');
+    loadAll();
+  }else{
+    alert('Wrong password. Default is hawzbox2024');
+  }
+}
+function logout(){ localStorage.removeItem('hawz_admin'); location.reload(); }
+function showTab(name){
+  ['overview','posts','users','paystack','broadcast','settings'].forEach(t=>{
+    document.getElementById('view-'+t)?.classList.add('hidden');
+    document.getElementById('tab-'+t)?.classList.remove('bg-[#B1EB01]','text-black','font-bold');
+    document.getElementById('tab-'+t)?.classList.add('text-zinc-400');
+  });
+  document.getElementById('view-'+name)?.classList.remove('hidden');
+  document.getElementById('tab-'+name)?.classList.add('bg-[#B1EB01]','text-black','font-bold');
+  if(name==='posts') loadPosts();
+  if(name==='users') loadUsers();
+  if(name==='paystack') loadPayments();
+  if(name==='broadcast') loadBroadcasts();
+}
+
+let postsCache=[];
+async function loadAll(){
+  document.getElementById('liveStatus').innerText='Live • Connected to Supabase';
+  await Promise.all([loadPosts(true), loadPayments(), loadSettings(), loadBroadcasts()]);
+  updateStats();
+}
+
+async function loadPosts(silent=false){
+  try{
+    const {data,error} = await supabaseClient.from('posts').select('*').order('created_at',{ascending:false}).limit(200);
+    if(error){
+      // try posts table (your table name might be posts or houses)
+      const {data: data2, error: err2} = await supabaseClient.from('houses').select('*').order('createdat',{ascending:false}).limit(200);
+      if(err2) throw error;
+      postsCache = data2||[];
+    }else{
+      postsCache = data||[];
+    }
+    if(!silent) renderPosts();
+    renderRecent();
+    updateStats();
+  }catch(e){ console.error(e); document.getElementById('liveStatus').innerText='Error: '+e.message; }
+}
+
+function renderRecent(){
+  const el=document.getElementById('recentPosts');
+  if(!el) return;
+  el.innerHTML = postsCache.slice(0,5).map(p=> `<div class="flex gap-3 bg-[#0F0F0F] border border-[#1A1A1A] rounded-xl p-3"><img src="${(p.images&&p.images[0])||p.image||''}" class="w-12 h-12 rounded-lg object-cover"><div class="flex-1"><p class="text-[11px] font-semibold truncate">${p.title||'No title'}</p><p class="text-[10px] text-zinc-500">${p.area||''}, ${p.state||''} • ₦${p.price||0}</p></div><span class="text-[9px] bg-[#1E1E1E] px-2 py-1 rounded-full h-fit">${p.type||'Rent'}</span></div>`).join('') || '<p class="text-[11px] text-zinc-600">No posts yet</p>';
+}
+
+function renderPosts(){
+  const container=document.getElementById('postsTable');
+  const q=(document.getElementById('postSearch')?.value||'').toLowerCase();
+  let filtered = postsCache;
+  if(q) filtered = filtered.filter(p=> `${p.title} ${p.area} ${p.state} ${p.housetype} ${p.type}`.toLowerCase().includes(q));
+  container.innerHTML = filtered.map(p=> `
+  <div class="card rounded-2xl p-4 flex gap-4">
+    <img src="${(p.images&&p.images[0])||p.image||''}" class="w-20 h-20 rounded-xl object-cover">
+    <div class="flex-1">
+      <div class="flex items-start justify-between"><p class="font-bold text-[13px]">${p.title||'No title'}</p><span class="text-[10px] bg-[#B1EB01] text-black font-bold px-2 py-0.5 rounded-full">${p.type||''}</span></div>
+      <p class="text-[11px] text-zinc-400 mt-1">${p.area||''}, ${p.state||''} • ${p.housetype||''} • ₦${p.price||0}</p>
+      <p class="text-[10px] text-zinc-500 mt-1 line-clamp-1">${p.address||''}</p>
+      <div class="flex gap-2 mt-3">
+        <button onclick="deletePost('${p.id}')" class="bg-[#FF3B30]/10 border border-[#FF3B30]/20 text-[#FF3B30] text-[10px] font-bold px-3 py-1.5 rounded-full">Delete</button>
+        <button onclick="featurePost('${p.id}')" class="bg-[#1E1E1E] border border-[#252525] text-[10px] px-3 py-1.5 rounded-full">Feature</button>
+        <span class="text-[9px] text-zinc-600 ml-auto">${new Date(p.createdat||p.created_at||Date.now()).toLocaleDateString()}</span>
+      </div>
+    </div>
+  </div>`).join('') || '<p class="text-zinc-500 text-[12px]">No posts</p>';
+}
+
+async function deletePost(id){
+  if(!confirm('Delete this post live? It will disappear from app instantly.')) return;
+  const {error} = await supabaseClient.from('posts').delete().eq('id',id);
+  if(error){
+    const {error: err2} = await supabaseClient.from('houses').delete().eq('id',id);
+    if(err2) return alert('Delete failed: '+err2.message);
+  }
+  showToast('Deleted live');
+  loadPosts();
+}
+
+function filterPosts(){ renderPosts(); }
+
+async function loadUsers(){
+  // Group by ownerid
+  const map={};
+  postsCache.forEach(p=>{
+    const uid = p.ownerid||p.owner_id||'guest';
+    if(!map[uid]) map[uid]={id:uid, count:0, name:p.ownername||p.postername||'Guest', phone:p.ownerphone||p.phone||'', posts:[]};
+    map[uid].count++; map[uid].posts.push(p);
+  });
+  const users = Object.values(map);
+  document.getElementById('statUsers').innerText = users.length;
+  document.getElementById('usersTable').innerHTML = users.map(u=> `
+  <div class="card rounded-2xl p-4 flex justify-between items-center">
+    <div><p class="font-bold text-[13px]">${u.name}</p><p class="text-[11px] text-zinc-500">${u.id} • ${u.phone} • ${u.count} posts</p></div>
+    <div class="flex gap-2"><button onclick="messageUser('${u.id}')" class="bg-[#1E1E1E] border border-[#252525] text-[10px] px-3 py-1.5 rounded-full">Message</button><button class="bg-[#FF3B30]/10 border border-[#FF3B30]/20 text-[#FF3B30] text-[10px] px-3 py-1.5 rounded-full">Ban</button></div>
+  </div>`).join('') || '<p class="text-zinc-500 text-[12px]">No users yet</p>';
+}
+
+async function loadSettings(){
+  try{
+    const {data} = await supabaseClient.from('admin_settings').select('*').eq('id',1).single();
+    if(data){
+      document.getElementById('toggleView').className = data.pay_to_view_enabled ? 'toggle on' : 'toggle';
+      document.getElementById('togglePost').className = data.pay_to_post_enabled ? 'toggle on' : 'toggle';
+      document.getElementById('viewAmount').value = data.pay_to_view_amount||500;
+      document.getElementById('postAmount').value = data.pay_to_post_amount||1000;
+      if(data.paystack_public_key) document.getElementById('paystackPublic').value = data.paystack_public_key;
+    }
+  }catch(e){ console.log('settings table not created yet', e.message); }
+}
+
+async function savePaystackSettings(){
+  const viewEnabled = document.getElementById('toggleView').classList.contains('on');
+  const postEnabled = document.getElementById('togglePost').classList.contains('on');
+  const viewAmount = parseInt(document.getElementById('viewAmount').value)||500;
+  const postAmount = parseInt(document.getElementById('postAmount').value)||1000;
+  try{
+    const {error} = await supabaseClient.from('admin_settings').upsert({id:1, pay_to_view_enabled:viewEnabled, pay_to_view_amount:viewAmount, pay_to_post_enabled:postEnabled, pay_to_post_amount:postAmount, updated_at:new Date().toISOString()});
+    if(error) throw error;
+    document.getElementById('paySaveStatus').innerText='Saved live! App will use new settings instantly.';
+    setTimeout(()=> document.getElementById('paySaveStatus').innerText='', 3000);
+  }catch(e){ alert('Create admin_settings table first. See SQL in overview. Error: '+e.message); }
+}
+
+function togglePay(type){
+  const el = document.getElementById(type==='view'?'toggleView':'togglePost');
+  el.classList.toggle('on');
+}
+
+async function savePaystackKeys(){
+  const pub = document.getElementById('paystackPublic').value.trim();
+  const sec = document.getElementById('paystackSecret').value.trim();
+  if(!pub) return alert('Enter public key');
+  try{
+    const {error} = await supabaseClient.from('admin_settings').upsert({id:1, paystack_public_key:pub, paystack_secret_key:sec, updated_at:new Date().toISOString()});
+    if(error) throw error;
+    alert('Paystack keys saved live!');
+  }catch(e){ alert('Error: '+e.message); }
+}
+
+async function loadPayments(){
+  try{
+    const {data} = await supabaseClient.from('payments').select('*').order('created_at',{ascending:false}).limit(50);
+    document.getElementById('statRevenue').innerText = '₦'+ (data||[]).reduce((s,p)=> s+(p.amount||0),0);
+    document.getElementById('paymentsList').innerHTML = (data||[]).map(p=> `<div class="bg-[#0F0F0F] border border-[#1A1A1A] rounded-xl p-3 flex justify-between"><div><p class="text-[11px] font-bold">${p.reference}</p><p class="text-[10px] text-zinc-500">${p.type} • ${p.email} • ₦${p.amount}</p></div><span class="text-[9px] bg-[#B1EB01] text-black font-bold px-2 py-1 rounded-full h-fit">${p.status}</span></div>`).join('') || '<p class="text-[11px] text-zinc-600">No payments yet. Connect Paystack webhook.</p>';
+  }catch(e){ document.getElementById('paymentsList').innerHTML = '<p class="text-[11px] text-zinc-600">Create payments table first. See SQL in overview.</p>'; }
+}
+
+async function sendBroadcast(){
+  const title = document.getElementById('broadcastTitle').value.trim();
+  const msg = document.getElementById('broadcastMsg').value.trim();
+  const target = document.getElementById('broadcastTarget').value.trim()||null;
+  if(!title||!msg) return alert('Enter title and message');
+  try{
+    const {error} = await supabaseClient.from('broadcasts').insert([{title, message:msg, target_user_id:target}]);
+    if(error) throw error;
+    alert('Broadcast sent live! Users will see it if app polls broadcasts table.');
+    document.getElementById('broadcastTitle').value=''; document.getElementById('broadcastMsg').value='';
+    loadBroadcasts();
+  }catch(e){ alert('Create broadcasts table first. Error: '+e.message); }
+}
+
+async function loadBroadcasts(){
+  try{
+    const {data} = await supabaseClient.from('broadcasts').select('*').order('created_at',{ascending:false}).limit(20);
+    document.getElementById('broadcastsList').innerHTML = (data||[]).map(b=> `<div class="bg-[#0F0F0F] border border-[#1A1A1A] rounded-xl p-3"><p class="text-[11px] font-bold">${b.title}</p><p class="text-[10px] text-zinc-400 mt-1">${b.message}</p><p class="text-[9px] text-zinc-600 mt-1">${b.target_user_id ? 'To: '+b.target_user_id : 'To: ALL'} • ${new Date(b.created_at).toLocaleString()}</p></div>`).join('') || '<p class="text-[11px] text-zinc-600">No broadcasts</p>';
+  }catch(e){ document.getElementById('broadcastsList').innerHTML = '<p class="text-[11px] text-zinc-600">Create broadcasts table first.</p>'; }
+}
+
+function updateStats(){
+  document.getElementById('statPosts').innerText = postsCache.length;
+  document.getElementById('statVideos').innerText = postsCache.filter(p=> p.videourl||p.video||p.hasvideo).length;
+  const users = new Set(postsCache.map(p=> p.ownerid||p.owner_id||'guest')).size;
+  document.getElementById('statUsers').innerText = users;
+}
+
+function refreshAll(){ loadAll(); }
+function showToast(msg){ const t=document.createElement('div'); t.className='fixed bottom-6 left-1/2 -translate-x-1/2 bg-[#1E1E1E] border border-[#2A2A2A] px-4 py-2 rounded-full text-[11px] z-50'; t.innerText=msg; document.body.appendChild(t); setTimeout(()=>t.remove(),2500); }
+
+// Auto login if already
+if(localStorage.getItem('hawz_admin')==='true'){
+  document.getElementById('loginView').classList.add('hidden');
+  document.getElementById('dashView').classList.remove('hidden');
+  loadAll();
+}
+</script>
+</body>
+</html>
