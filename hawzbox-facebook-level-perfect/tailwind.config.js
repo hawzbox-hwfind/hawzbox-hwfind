@@ -1,0 +1,1 @@
+module.exports={content:['./app/**/*.{js,ts,jsx,tsx}','./components/**/*.{js,ts,jsx,tsx}','./config.ts'],theme:{extend:{colors:{lime:'#B1EB01'}}},plugins:[]}
