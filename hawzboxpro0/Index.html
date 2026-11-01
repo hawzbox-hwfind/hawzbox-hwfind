@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>HawzBox - Professional</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<style>
+*{ -webkit-tap-highlight-color: transparent; }
+body{font-family:'Inter',sans-serif;background:#000;color:#fff;margin:0}
+:root{--green:#B1EB01}
+.lime{background:var(--green)}.lime-text{color:var(--green)}
+.card-bg{background:#161616;border:1px solid #252525}
+.bottom-bar{position:fixed;bottom:0;left:0;right:0;max-width:430px;margin:0 auto;background:#111111;border-top:1px solid #1A1A1A;height:84px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 6px 12px 6px;z-index:40;border-top-left-radius:18px;border-top-right-radius:18px}
+.notch-wrap{position:absolute;left:50%;top:-38px;transform:translateX(-50%);width:88px;height:88px;background:#000;border-radius:50%;display:flex;align-items:center;justify-content:center;z-index:41}
+.notch-inner{width:62px;height:62px;background:#1E1E1E;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.scroll-hide::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body class="bg-black text-white">
+<!-- APP SHELL - UI 100% SAME AS YOUR ORIGINAL -->
+<div id="app" class="max-w-[430px] mx-auto min-h-screen relative pb-[100px]">
+  <!-- HEADER - EXACT SAME -->
+  <div class="sticky top-0 z-30 bg-black px-4 pt-4 pb-3">
+    <div class="flex justify-between items-center">
+      <div class="font-bold text-[28px]" style="font-family:'Space Grotesk'"><span style="color:#fff">Hawz</span><span style="color:#B1EB01">Box</span></div>
+      <div class="flex gap-4 items-center text-[18px] text-zinc-400">
+        <button id="filterBtn"><i class="fa-solid fa-sliders"></i></button>
+        <button id="notifBtn" class="relative"><i class="fa-solid fa-bell"></i><span id="notifDot" class="hidden absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span></button>
+        <button><i class="fa-solid fa-ellipsis-vertical"></i></button>
+      </div>
+    </div>
+    <!-- Search - EXACT SAME -->
+    <div class="mt-4 bg-[#161616] border border-[#252525] rounded-full flex items-center px-4 py-3">
+      <i class="fa-solid fa-magnifying-glass text-zinc-500"></i>
+      <input id="searchInput" placeholder="Search House & Rent..." class="bg-transparent flex-1 ml-3 outline-none text-[14px] placeholder:text-zinc-500">
+      <button class="w-8 h-8 bg-[#222] rounded-full flex items-center justify-center"><i class="fa-solid fa-microphone text-[12px]"></i></button>
+    </div>
+    <!-- Chips - EXACT SAME -->
+    <div class="mt-4 flex gap-2 overflow-x-auto scroll-hide pb-1">
+      <button data-filter="all" class="filter-chip bg-[#B1EB01] text-black font-bold px-5 py-2.5 rounded-full text-[13px] whitespace-nowrap">All</button>
+      <button data-filter="self" class="filter-chip bg-[#1E1E1E] text-zinc-400 border border-[#2A2A2A] px-5 py-2.5 rounded-full text-[13px] whitespace-nowrap">Self Contain</button>
+      <button data-filter="single" class="filter-chip bg-[#1E1E1E] text-zinc-400 border border-[#2A2A2A] px-5 py-2.5 rounded-full text-[13px] whitespace-nowrap">Single Room</button>
+      <button data-filter="2bed" class="filter-chip bg-[#1E1E1E] text-zinc-400 border border-[#2A2A2A] px-5 py-2.5 rounded-full text-[13px] whitespace-nowrap">2 Bedroom</button>
+    </div>
+  </div>
+
+  <!-- FEED - EXACT SAME LAYOUT -->
+  <div class="px-3 mt-2">
+    <div class="flex justify-between items-center px-1 mb-3">
+      <h2 class="font-bold text-[18px]">All Listings</h2>
+      <button class="text-zinc-500 text-[13px]">View all</button>
+    </div>
+    <div id="listingsGrid" class="grid grid-cols-2 gap-3">
+      <!-- Houses injected by JS, same card design -->
+    </div>
+  </div>
+
+  <!-- BOTTOM BAR - EXACT SAME -->
+  <div class="bottom-bar">
+    <button class="flex flex-col items-center gap-1 text-[#B1EB01] w-16"><i class="fa-solid fa-house"></i><span class="text-[11px] font-bold">Feed</span></button>
+    <button class="flex flex-col items-center gap-1 text-zinc-500 w-16"><i class="fa-solid fa-location-dot"></i><span class="text-[11px]">Areas</span></button>
+    <div class="notch-wrap"><div class="notch-inner" id="postBtn"><i class="fa-solid fa-plus text-[18px] text-[#B1EB01]"></i></div></div>
+    <div class="w-16"></div>
+    <button class="flex flex-col items-center gap-1 text-zinc-500 w-16"><i class="fa-solid fa-message"></i><span class="text-[11px]">Chat</span></button>
+    <button class="flex flex-col items-center gap-1 text-zinc-500 w-16"><i class="fa-solid fa-user"></i><span class="text-[11px]">Profile</span></button>
+  </div>
+</div>
+
+<!-- MODULES - PROFESSIONAL STRUCTURE (UI UNCHANGED, LOGIC SECURED) -->
+<script type="module">
+import { supabase } from './js/supabaseClient.js';
+import { fetchListings, renderListings } from './js/app.js';
+import { initPaystackSecure } from './js/paystackSecure.js';
+
+window.supabase = supabase; // for debugging
+// Init
+fetchListings().then(renderListings);
+initPaystackSecure(supabase);
+
+// Search & filter still work exactly same
+document.getElementById('searchInput').addEventListener('input', (e)=>{
+  window.filterHouses(e.target.value);
+});
+document.querySelectorAll('.filter-chip').forEach(ch=>{
+  ch.addEventListener('click', ()=>{
+    document.querySelectorAll('.filter-chip').forEach(c=>c.className='filter-chip bg-[#1E1E1E] text-zinc-400 border border-[#2A2A2A] px-5 py-2.5 rounded-full text-[13px] whitespace-nowrap');
+    ch.className='filter-chip bg-[#B1EB01] text-black font-bold px-5 py-2.5 rounded-full text-[13px] whitespace-nowrap';
+    window.filterByType(ch.dataset.filter);
+  });
+});
+</script>
+</body>
+</html>
